@@ -15,7 +15,17 @@ const RequestLogger = require('./middleware/requestLogger');
 const app = express();
 
 // Security middleware
-app.use(helmet());
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", "data:", "https:"],
+      connectSrc: ["'self'", "http://localhost:3001", "http://localhost:3000"],
+    },
+  },
+}));
 
 // CORS configuration
 app.use(cors({
@@ -57,15 +67,13 @@ app.get('/health', (req, res) => {
   });
 });
 
-// Serve UI for root path
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// Error handling middleware
 app.use(errorHandler);
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3001;
 
 app.listen(PORT, () => {
   console.log(`Threat Detection Server running on port ${PORT}`);

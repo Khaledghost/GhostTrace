@@ -1,4 +1,4 @@
-const API_BASE = 'http://localhost:3000/api';
+const API_BASE = '/api';
 
 let currentSection = 'dashboard';
 
@@ -8,7 +8,11 @@ function showSection(sectionId) {
     document.getElementById(sectionId).classList.add('active');
     
     document.querySelectorAll('.nav-link').forEach(b => b.classList.remove('active'));
-    event.target.classList.add('active');
+    
+    // Find and highlight the clicked button
+    document.querySelectorAll(`.nav-link[data-section="${sectionId}"]`).forEach(btn => {
+        btn.classList.add('active');
+    });
     
     currentSection = sectionId;
     
@@ -20,10 +24,8 @@ function showSection(sectionId) {
     }
 }
 
-// Load dashboard stats
 async function loadDashboard() {
     try {
-        // Since we don't have actual user data, show placeholder stats
         document.getElementById('totalProfiles').textContent = '0';
         document.getElementById('pendingThreats').textContent = '0';
         document.getElementById('criticalThreats').textContent = '0';
@@ -38,7 +40,7 @@ document.getElementById('trackForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     
     const resultBox = document.getElementById('trackResult');
-    resultBox.innerHTML = '<p class="loading">Tracking activity...</p>';
+    resultBox.innerHTML = '<p class="loading">TRACKING...</p>';
     
     const activityData = {
         accountId: document.getElementById('accountId').value,
@@ -71,11 +73,21 @@ document.getElementById('trackForm').addEventListener('submit', async (e) => {
         
         if (data.success) {
             resultBox.innerHTML = `
-                <div style="color: #28a745;">
-                    <h4>✓ Activity Tracked Successfully</h4>
-                    <pre style="margin-top: 0.5rem; white-space: pre-wrap;">${JSON.stringify(data.data, null, 2)}</pre>
+                <div style="color: #00ff00;">
+                    <p style="text-transform: uppercase; letter-spacing: 1px; margin-bottom: 0.5rem;">
+                        <span style="color: #00ff00;">●</span> ACTIVITY TRACKED
+                    </p>
+                    <pre>${JSON.stringify(data.data, null, 2)}</pre>
                 </div>
             `;
+            
+            // Update dashboard indicators
+            const dot = document.querySelector('.nav-brand .status-dot');
+            if (dot) {
+                dot.classList.remove('green', 'red');
+                dot.classList.add('green', 'pulse');
+                setTimeout(() => dot.classList.remove('pulse'), 2000);
+            }
             
             // Now analyze for threats
             try {
@@ -91,18 +103,30 @@ document.getElementById('trackForm').addEventListener('submit', async (e) => {
                 
                 if (analyzeData.data.isThreat) {
                     resultBox.innerHTML += `
-                        <div style="margin-top: 1rem; padding: 1rem; background: #fff3cd; border-radius: 8px; border-left: 4px solid #ffc107;">
-                            <h4>⚠️ Threat Detected!</h4>
-                            <p><strong>Risk Score:</strong> ${analyzeData.data.riskScore}</p>
-                            <p><strong>Threat Level:</strong> ${analyzeData.data.threatLevel}</p>
-                            <p><strong>Anomalies:</strong> ${analyzeData.data.anomalies.length}</p>
+                        <div style="margin-top: 1rem; padding: 1rem; background: #1a0000; border: 1px solid #ff0000;">
+                            <p style="text-transform: uppercase; letter-spacing: 1px; margin-bottom: 0.5rem; color: #ff0000;">
+                                <span style="color: #ff0000;">●</span> THREAT DETECTED
+                            </p>
+                            <p style="color: #fff; margin: 0.25rem 0;"><strong>RISK:</strong> ${analyzeData.data.riskScore}</p>
+                            <p style="color: #fff; margin: 0.25rem 0;"><strong>LEVEL:</strong> ${analyzeData.data.threatLevel}</p>
+                            <p style="color: #fff; margin: 0.25rem 0;"><strong>ANOMALIES:</strong> ${analyzeData.data.anomalies.length}</p>
                         </div>
                     `;
+                    
+                    // Update dashboard indicators
+                    const dot = document.querySelector('.nav-brand .status-dot');
+                    if (dot) {
+                        dot.classList.remove('green', 'yellow', 'pulse');
+                        dot.classList.add('red', 'pulse');
+                        setTimeout(() => dot.classList.remove('pulse'), 2000);
+                    }
                 } else {
                     resultBox.innerHTML += `
-                        <div style="margin-top: 1rem; padding: 1rem; background: #d4edda; border-radius: 8px; border-left: 4px solid #28a745;">
-                            <p><strong>No threats detected</strong></p>
-                            <p>Risk Score: ${analyzeData.data.riskScore}</p>
+                        <div style="margin-top: 1rem; padding: 1rem; background: #001a00; border: 1px solid #00ff00;">
+                            <p style="text-transform: uppercase; letter-spacing: 1px; margin-bottom: 0.5rem; color: #00ff00;">
+                                <span style="color: #00ff00;">●</span> NO THREATS
+                            </p>
+                            <p style="color: #fff;"><strong>RISK:</strong> ${analyzeData.data.riskScore}</p>
                         </div>
                     `;
                 }
@@ -110,17 +134,25 @@ document.getElementById('trackForm').addEventListener('submit', async (e) => {
                 console.error('Error analyzing threats:', err);
             }
         } else {
-            resultBox.innerHTML = `<div style="color: #dc3545;">Error: ${data.error || 'Unknown error'}</div>`;
+            resultBox.innerHTML = `<div style="color: #ff0000;">ERROR: ${data.error || 'UNKNOWN'}</div>`;
         }
     } catch (error) {
-        resultBox.innerHTML = `<div style="color: #dc3545;">Error: ${error.message}</div>`;
+        resultBox.innerHTML = `<div style="color: #ff0000;">ERROR: ${error.message}</div>`;
+        
+        // Update dashboard indicators
+        const dot = document.querySelector('.nav-brand .status-dot');
+        if (dot) {
+            dot.classList.remove('green', 'pulse');
+            dot.classList.add('red', 'pulse');
+            setTimeout(() => dot.classList.remove('pulse'), 2000);
+        }
     }
 });
 
 // Refresh logs
 async function refreshLogs() {
     const container = document.getElementById('logsContainer');
-    container.innerHTML = '<p class="loading">Loading logs...</p>';
+    container.innerHTML = '<p class="loading">LOADING...</p>';
     
     try {
         const filter = document.getElementById('logFilter').value;
@@ -152,19 +184,18 @@ async function refreshLogs() {
         } else {
             container.innerHTML = `
                 <div class="empty-state">
-                    <div class="empty-state-icon">📝</div>
-                    <p>No logs available</p>
+                    <p>NO LOGS AVAILABLE</p>
                 </div>
             `;
         }
     } catch (error) {
-        container.innerHTML = `<div style="color: #dc3545;">Error loading logs: ${error.message}</div>`;
+        container.innerHTML = `<div style="color: #ff0000;">ERROR: ${error.message}</div>`;
     }
 }
 
 // Clear logs
 async function clearLogs() {
-    if (!confirm('Are you sure you want to clear all logs?')) {
+    if (!confirm('Clear all logs?')) {
         return;
     }
     
@@ -183,8 +214,38 @@ async function clearLogs() {
     }
 }
 
-// Initial load
-window.onload = () => {
-    loadDashboard();
-};
+// Add event listeners
+function initializeEventListeners() {
+    // Navigation buttons
+    document.querySelectorAll('.nav-link').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const sectionId = this.getAttribute('data-section');
+            if (sectionId) {
+                showSection(sectionId);
+            }
+        });
+    });
+    
+    // Dashboard action buttons
+    document.querySelectorAll('.btn[data-section]').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const sectionId = this.getAttribute('data-section');
+            if (sectionId) {
+                showSection(sectionId);
+            }
+        });
+    });
+    
+    // Log controls
+    document.getElementById('refreshLogsBtn')?.addEventListener('click', refreshLogs);
+    document.getElementById('clearLogsBtn')?.addEventListener('click', clearLogs);
+    
+    // Log filter
+    document.getElementById('logFilter')?.addEventListener('change', refreshLogs);
+}
 
+// Initial load
+window.addEventListener('DOMContentLoaded', () => {
+    initializeEventListeners();
+    loadDashboard();
+});

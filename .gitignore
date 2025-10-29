@@ -1,6 +1,7 @@
 # Dependencies
 node_modules/
-
+# DB config
+config/
 # Environment variables
 .env
 .env.local
