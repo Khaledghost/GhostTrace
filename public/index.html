@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Threat Detection Dashboard</title>
+    <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-brand">
+            <h1>🛡️ Threat Detection System</h1>
+        </div>
+        <div class="nav-links">
+            <button class="nav-link active" onclick="showSection('dashboard')">Dashboard</button>
+            <button class="nav-link" onclick="showSection('track')">Track Activity</button>
+            <button class="nav-link" onclick="showSection('logs')">Request Logs</button>
+        </div>
+    </nav>
+
+    <main class="container">
+        <!-- Dashboard Section -->
+        <section id="dashboard" class="section active">
+            <h2>Dashboard</h2>
+            
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-icon">📊</div>
+                    <div class="stat-info">
+                        <h3 id="totalProfiles">0</h3>
+                        <p>Behavioral Profiles</p>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon">⚠️</div>
+                    <div class="stat-info">
+                        <h3 id="pendingThreats">0</h3>
+                        <p>Pending Threats</p>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon">🔴</div>
+                    <div class="stat-info">
+                        <h3 id="criticalThreats">0</h3>
+                        <p>Critical Threats</p>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon">📝</div>
+                    <div class="stat-info">
+                        <h3 id="totalActivities">0</h3>
+                        <p>Activities Logged</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="action-panel">
+                <h3>Quick Actions</h3>
+                <button class="btn-primary" onclick="showSection('track')">Track New Activity</button>
+                <button class="btn-secondary" onclick="showSection('logs')">View Request Logs</button>
+            </div>
+        </section>
+
+        <!-- Track Activity Section -->
+        <section id="track" class="section">
+            <h2>Track Activity</h2>
+            
+            <form id="trackForm" class="form">
+                <div class="form-group">
+                    <label for="userId">User ID</label>
+                    <input type="text" id="userId" placeholder="user-123" required>
+                </div>
+                
+                <div class="form-group">
+                    <label for="accountId">Account ID</label>
+                    <input type="text" id="accountId" placeholder="acc-456" required>
+                </div>
+                
+                <div class="form-group">
+                    <label for="activityType">Activity Type</label>
+                    <select id="activityType" required>
+                        <option value="login">Login</option>
+                        <option value="logout">Logout</option>
+                        <option value="resource_access">Resource Access</option>
+                        <option value="api_call">API Call</option>
+                        <option value="data_access">Data Access</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label for="ipAddress">IP Address</label>
+                    <input type="text" id="ipAddress" placeholder="192.168.1.1">
+                </div>
+                
+                <div class="form-group">
+                    <label for="location">Location</label>
+                    <input type="text" id="location" placeholder="New York, US">
+                </div>
+                
+                <div class="form-group">
+                    <label for="deviceInfo">Device Info</label>
+                    <input type="text" id="deviceInfo" placeholder="Desktop, Chrome">
+                </div>
+                
+                <button type="submit" class="btn-primary">Track Activity</button>
+            </form>
+            
+            <div id="trackResult" class="result-box"></div>
+        </section>
+
+        <!-- Request Logs Section -->
+        <section id="logs" class="section">
+            <h2>Request Logs</h2>
+            
+            <div class="logs-controls">
+                <button class="btn-secondary" onclick="refreshLogs()">Refresh</button>
+                <button class="btn-danger" onclick="clearLogs()">Clear Logs</button>
+                <select id="logFilter" onchange="refreshLogs()">
+                    <option value="">All Methods</option>
+                    <option value="GET">GET</option>
+                    <option value="POST">POST</option>
+                    <option value="PATCH">PATCH</option>
+                    <option value="DELETE">DELETE</option>
+                </select>
+            </div>
+            
+            <div id="logsContainer" class="logs-container">
+                <p class="loading">Loading logs...</p>
+            </div>
+        </section>
+    </main>
+
+    <script src="/app.js"></script>
+</body>
+</html>
+

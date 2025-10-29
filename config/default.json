@@ -1,0 +1,31 @@
+{
+  "server": {
+    "port": 3000
+  },
+  "database": {
+    "host": "localhost",
+    "port": 5432,
+    "name": "threat_detection",
+    "user": "postgres",
+    "password": "hoho"
+  },
+  "jwt": {
+    "secret": "your-secret-key-change-in-production",
+    "expiresIn": "24h"
+  },
+  "threatDetection": {
+    "anomalyThreshold": 0.7,
+    "suspiciousBehaviorWindow": 3600000,
+    "maxFailedAttempts": 5,
+    "checkInterval": 60000
+  },
+  "behavioralWeights": {
+    "loginPattern": 0.3,
+    "accessPattern": 0.2,
+    "resourceUsage": 0.2,
+    "geographicPattern": 0.15,
+    "devicePattern": 0.15
+  }
+}
+
+
