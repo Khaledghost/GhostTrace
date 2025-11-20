@@ -14,7 +14,6 @@ const RequestLogger = require('./middleware/requestLogger');
 
 const app = express();
 
-// Security middleware
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
@@ -27,38 +26,30 @@ app.use(helmet({
   },
 }));
 
-// CORS configuration
 app.use(cors({
   origin: process.env.ALLOWED_ORIGINS || '*',
   credentials: true
 }));
 
-// Rate limiting
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100 // limit each IP to 100 requests per windowMs
+  windowMs: 15 * 60 * 1000,
+  max: 100
 });
 app.use('/api/', limiter);
 
-// Body parser middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Request logging middleware
 app.use(RequestLogger.middleware());
 
-// Serve static files
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Database connection
 connectDB();
 
-// Routes
 app.use('/api/threats', threatDetectionRoutes);
 app.use('/api/behavior', behavioralTrackingRoutes);
 app.use('/api/logger', loggerRoutes);
 
-// Health check endpoint
 app.get('/health', (req, res) => {
   res.status(200).json({ 
     status: 'OK', 
@@ -73,7 +64,7 @@ app.get('/', (req, res) => {
 
 app.use(errorHandler);
 
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
   console.log(`Threat Detection Server running on port ${PORT}`);
