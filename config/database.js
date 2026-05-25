@@ -1,23 +1,32 @@
 const { Sequelize } = require('sequelize');
+const platformDb = require('./platformDb');
 
-const sequelize = new Sequelize(
-  process.env.DB_NAME || 'dna',
-  process.env.DB_USER || 'postgres',
-  process.env.DB_PASS || '',
-  {
-    host: process.env.DB_HOST || 'localhost',
-    port: parseInt(process.env.DB_PORT || '5432', 10),
-    dialect: 'postgres',
-    logging: process.env.NODE_ENV === 'development' ? console.log : false,
-    pool: {
-      max: parseInt(process.env.DB_POOL_MAX || '10', 10),
-      min: parseInt(process.env.DB_POOL_MIN || '0', 10),
-      acquire: 30000,
-      idle: 10000,
-    },
+function buildSequelize() {
+  const cfg = platformDb.getConfig();
+  const opts = platformDb.buildSequelizeOptions(cfg);
+  const logging = process.env.NODE_ENV === 'development' ? console.log : false;
+  const pool = {
+    max: cfg.poolMax || parseInt(process.env.DB_POOL_MAX || '10', 10),
+    min: parseInt(process.env.DB_POOL_MIN || '0', 10),
+    acquire: cfg.connectTimeoutMs || 30000,
+    idle: 10000,
+  };
+
+  if (opts.url) {
+    return new Sequelize(opts.url, { dialect: 'postgres', logging, pool });
   }
-);
 
+  return new Sequelize(cfg.database, cfg.username, cfg.password, {
+    host: cfg.host,
+    port: cfg.port,
+    dialect: 'postgres',
+    logging,
+    dialectOptions: opts.dialectOptions,
+    pool,
+  });
+}
+
+const sequelize = buildSequelize();
 let dbReady = false;
 
 const loadModels = () => {
@@ -36,7 +45,8 @@ const connectDB = async (options = {}) => {
     try {
       await sequelize.authenticate();
       dbReady = true;
-      console.log('PostgreSQL connected successfully');
+      const cfg = platformDb.getConfig();
+      console.log(`PostgreSQL connected (${cfg.host}:${cfg.port}/${cfg.database})`);
 
       if (process.env.DB_SYNC === 'true') {
         await sequelize.sync({ alter: true });
@@ -51,12 +61,6 @@ const connectDB = async (options = {}) => {
     } catch (error) {
       dbReady = false;
       console.error(`PostgreSQL connection attempt ${attempt}/${retries} failed: ${error.message}`);
-      if (/password authentication failed/i.test(error.message) && attempt === 1) {
-        console.error(
-          'Hint: Postgres only sets the password on first boot. If you changed DB_PASS in .env,\n' +
-          '      reset the data volume: docker compose down -v && docker compose up -d'
-        );
-      }
       if (attempt < retries) {
         await new Promise((r) => setTimeout(r, delayMs));
       }
@@ -70,6 +74,24 @@ const connectDB = async (options = {}) => {
   console.warn('PostgreSQL unavailable — continuing without persistence');
 };
 
+async function savePlatformConfig(patch) {
+  const saved = platformDb.saveConfig(patch);
+  const cfg = platformDb.getConfig();
+  const dbConnector = require('../core/dbConnector');
+  try {
+    await dbConnector.testConnection({
+      ...cfg,
+      type: 'postgres',
+      id: '__platform_test__',
+      connectionMode: cfg.connectionMode,
+      connectionString: cfg.connectionString,
+    });
+    return { config: saved, tested: true, needsRestart: true };
+  } catch (err) {
+    return { config: saved, tested: false, error: err.message, needsRestart: true };
+  }
+}
+
 const isDbReady = () => dbReady;
 
-module.exports = { sequelize, connectDB, isDbReady };
+module.exports = { sequelize, connectDB, isDbReady, savePlatformConfig };

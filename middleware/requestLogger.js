@@ -1,5 +1,6 @@
 const EventEmitter = require('events');
 const logAiService = require('../services/logAiService');
+const geoService = require('../services/geoService');
 
 const logEmitter = new EventEmitter();
 logEmitter.setMaxListeners(50);
@@ -10,12 +11,31 @@ class RequestLogger {
   static _idCounter = 1;
 
   static async logRequest(req, res, responseData = null, startTime = Date.now()) {
+    const path = req.path || req.originalUrl?.split('?')[0];
+    const ip = geoService.normalizeIp(
+      req.ip || req.headers['x-forwarded-for'] || req.headers['x-real-ip'] || req.connection?.remoteAddress
+    );
+    const geo = geoService.trackRequest(req, {
+      method: req.method,
+      path,
+      statusCode: res.statusCode,
+      responseTime: Date.now() - startTime,
+    });
+
     const logEntry = {
       id: `log-${RequestLogger._idCounter++}`,
       timestamp: new Date().toISOString(),
       method: req.method,
-      path: req.path || req.originalUrl?.split('?')[0],
-      ip: req.ip || req.headers['x-forwarded-for'] || req.connection?.remoteAddress,
+      path,
+      ip,
+      geo: {
+        lat: geo.lat,
+        lon: geo.lon,
+        city: geo.city,
+        country: geo.country,
+        region: geo.region,
+        private: geo.private,
+      },
       userAgent: req.get('user-agent'),
       statusCode: res.statusCode,
       responseTime: Date.now() - startTime,

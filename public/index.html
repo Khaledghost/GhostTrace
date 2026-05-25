@@ -9,7 +9,10 @@
   <link rel="stylesheet" href="styles.css">
   <link rel="stylesheet" href="soc.css">
   <link rel="stylesheet" href="ghosttrace.css">
+  <link rel="stylesheet" href="rtwv-map.css">
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+  <script src="https://cdn.jsdelivr.net/npm/topojson-client@3"></script>
 </head>
 <body>
   
@@ -32,6 +35,9 @@
       <div class="nav-label">Operations</div>
       <a href="#" class="nav-item active" data-section="dashboard" id="nav-dashboard">
         <i class="fas fa-gauge-high"></i> <span>Command Center</span>
+      </a>
+      <a href="#" class="nav-item" data-section="globe" id="nav-globe">
+        <i class="fas fa-globe-americas"></i> <span>Global Traffic</span>
       </a>
       <a href="#" class="nav-item" data-section="alerts" id="nav-alerts">
         <i class="fas fa-bell"></i> <span>Alert Queue</span>
@@ -282,6 +288,45 @@
         </div>
       </section>
 
+      <!-- ==================== PAGE: GLOBAL TRAFFIC (Nomisoft-style) ==================== -->
+      <section class="page" id="page-globe">
+        <div class="rtwv-layout">
+          <div class="card rtwv-map-card">
+            <div class="rtwv-map-header">
+              <h4 class="theme-panel-title" style="margin:0"><i class="fas fa-satellite-dish"></i> Real-Time Visitors Map</h4>
+              <span class="trace-pill"><span class="trace-dot"></span> <span id="globeLiveCount">0</span> requests</span>
+            </div>
+            <p class="rtwv-desc">Live arcs from each visitor’s IP to your protected application — green = success, red = not found, blue = redirect.</p>
+            <div class="rtwv-map-wrap">
+              <div id="globeMap" class="rtwv-map-host" aria-label="Live visitors world map"></div>
+            </div>
+            <div class="rtwv-legend">
+              <span><i class="rtwv-swatch rtwv-swatch-200"></i> 2xx OK</span>
+              <span><i class="rtwv-swatch rtwv-swatch-301"></i> 301/302</span>
+              <span><i class="rtwv-swatch rtwv-swatch-404"></i> 4xx / 404</span>
+              <span><i class="rtwv-swatch rtwv-swatch-server"></i> Your server</span>
+            </div>
+          </div>
+          <div class="rtwv-side">
+            <div class="card rtwv-feed-card">
+              <h4 class="theme-panel-title" style="margin-bottom:8px;font-size:11px">Live request stream</h4>
+              <div class="rtwv-feed-scroll">
+                <table class="rtwv-table" id="globeVisitsTable">
+                  <thead>
+                    <tr><th>IP</th><th>Status</th><th>Request</th></tr>
+                  </thead>
+                  <tbody id="globeVisitsBody"></tbody>
+                </table>
+              </div>
+            </div>
+            <div class="card" style="padding:16px">
+              <h4 class="theme-panel-title" style="margin-bottom:10px;font-size:11px">Top countries (session)</h4>
+              <div id="globeCountries" class="globe-stats-list"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <!-- ==================== PAGE: PROFILES ==================== -->
       <section class="page" id="page-profiles">
         <!-- PocketBase-style query search / filter bar -->
@@ -335,6 +380,32 @@
 
       <!-- ==================== PAGE: DATA SOURCES ==================== -->
       <section class="page" id="page-sources">
+        <!-- Platform DB (GhostTrace persistence) -->
+        <div class="card" style="padding:16px;margin-bottom:16px" id="platformDbCard">
+          <h4 class="theme-panel-title" style="margin-bottom:12px;font-size:11px"><i class="fas fa-server"></i> Platform Database (SOC persistence)</h4>
+          <form id="platformDbForm" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;align-items:end">
+            <div class="form-group">
+              <label>Mode</label>
+              <select id="pf-mode" style="height:36px">
+                <option value="fields">Host / Port / Fields</option>
+                <option value="uri">Connection URI</option>
+              </select>
+            </div>
+            <div class="form-group pf-fields"><label>Host</label><input type="text" id="pf-host" placeholder="localhost"></div>
+            <div class="form-group pf-fields"><label>Port</label><input type="number" id="pf-port" placeholder="5432"></div>
+            <div class="form-group pf-fields"><label>Database</label><input type="text" id="pf-database" placeholder="dna"></div>
+            <div class="form-group pf-fields"><label>User</label><input type="text" id="pf-username" placeholder="postgres"></div>
+            <div class="form-group pf-fields"><label>Password</label><input type="password" id="pf-password" placeholder="••••••"></div>
+            <div class="form-group pf-uri" style="display:none;grid-column:1/-1"><label>PostgreSQL URI</label>
+              <input type="text" id="pf-uri" placeholder="postgresql://user:pass@host:5432/dna" style="width:100%"></div>
+            <div style="display:flex;gap:8px">
+              <button type="button" class="btn-sm" id="pf-testBtn">Test</button>
+              <button type="submit" class="btn-sm btn-primary">Save</button>
+            </div>
+          </form>
+          <div id="platformDbStatus" style="margin-top:8px;font-size:11px;color:var(--text-dim)"></div>
+        </div>
+
         <div style="display: grid; grid-template-columns: 280px 1fr; gap: 16px;">
           <!-- Left Column: connected sources list & active jobs -->
           <div>
@@ -377,34 +448,52 @@
                   </div>
                 </div>
 
-                <div style="display: grid; grid-template-columns: 1.5fr 1fr; gap: 12px;">
+                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px;">
                   <div class="form-group">
                     <label>Database Type</label>
                     <select id="sf-type" style="height: 38px;">
                       <option value="postgres">PostgreSQL</option>
-                      <option value="mysql">MySQL</option>
+                      <option value="mysql">MySQL / MariaDB</option>
                       <option value="mongodb">MongoDB</option>
                       <option value="redis">Redis</option>
                     </select>
                   </div>
                   <div class="form-group">
+                    <label>Connection Mode</label>
+                    <select id="sf-mode" style="height: 38px;">
+                      <option value="fields">Host / Port / Fields</option>
+                      <option value="uri">Connection URI</option>
+                    </select>
+                  </div>
+                  <div class="form-group sf-fields-only">
                     <label>Connection Port</label>
-                    <input type="number" id="sf-port" placeholder="5432" required>
+                    <input type="number" id="sf-port" placeholder="5432">
                   </div>
                 </div>
 
-                <div class="form-group">
+                <div class="form-group sf-uri-only" style="display:none">
+                  <label>Connection URI</label>
+                  <input type="text" id="sf-uri" placeholder="postgresql://user:pass@host:5432/dbname">
+                  <small style="font-size:10px;color:var(--text-dim)">Supports postgresql://, mysql://, mongodb://, redis://</small>
+                </div>
+
+                <div class="form-group sf-fields-only">
                   <label>Host / IP Address</label>
-                  <input type="text" id="sf-host" placeholder="postgres or localhost" required>
+                  <input type="text" id="sf-host" placeholder="postgres or localhost">
                   <small style="font-size:10px;color:var(--text-dim)">Docker: use host <code style="font-family:var(--mono)">postgres</code></small>
                 </div>
 
-                <div class="form-group">
+                <div class="form-group sf-fields-only">
                   <label>Database Name</label>
-                  <input type="text" id="sf-database" placeholder="dna" required>
+                  <input type="text" id="sf-database" placeholder="dna">
                 </div>
 
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                <div class="form-group sf-fields-only" id="sf-schema-group">
+                  <label>Schema (PostgreSQL)</label>
+                  <input type="text" id="sf-schema" placeholder="public">
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;" class="sf-fields-only">
                   <div class="form-group">
                     <label>Username</label>
                     <input type="text" id="sf-username" placeholder="postgres">
@@ -414,6 +503,18 @@
                     <input type="password" id="sf-password" placeholder="••••••••">
                   </div>
                 </div>
+
+                <details style="margin:10px 0;font-size:12px">
+                  <summary style="cursor:pointer;color:var(--text-dim)">Advanced options</summary>
+                  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-top:10px">
+                    <div class="form-group"><label>Pool max</label><input type="number" id="sf-pool" value="5" min="1" max="50"></div>
+                    <div class="form-group"><label>Timeout (ms)</label><input type="number" id="sf-timeout" value="5000"></div>
+                    <div class="form-group" style="flex-direction:row;align-items:center;gap:8px;padding-top:20px">
+                      <input type="checkbox" id="sf-reject-unauth" checked style="width:auto">
+                      <label style="margin:0">Strict SSL verify</label>
+                    </div>
+                  </div>
+                </details>
 
                 <div class="form-group" style="flex-direction: row; align-items: center; gap: 10px; margin: 10px 0;">
                   <input type="checkbox" id="sf-ssl" style="width: auto;">
@@ -760,25 +861,9 @@
     </div>
   </div>
 
-  <!-- Theme toggle -->
-  <div class="theme-customizer">
-    <button type="button" class="theme-dot" id="themeToggle" title="Toggle dark / light mode" aria-label="Toggle theme">
-      <i class="fas fa-sun" id="themeToggleIcon"></i>
-    </button>
-    <div class="theme-panel" id="themePanel">
-      <div class="theme-panel-section">
-        <div class="theme-panel-title">GhostTrace Theme</div>
-        <button type="button" class="btn-xs theme-pick-btn" data-theme-pick="dark" style="width:100%;margin-bottom:6px;text-align:left">
-          <i class="fas fa-moon"></i> Dark Mode
-        </button>
-        <button type="button" class="btn-xs theme-pick-btn" data-theme-pick="light" style="width:100%;text-align:left">
-          <i class="fas fa-sun"></i> Light Mode
-        </button>
-      </div>
-    </div>
-  </div>
-
+  <script src="ui-feedback.js"></script>
   <script src="api-client.js"></script>
+  <script src="globe.js"></script>
   <script src="app.js"></script>
   <script src="soc-app.js"></script>
   <script src="ai-console.js"></script>

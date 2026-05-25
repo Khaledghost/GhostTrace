@@ -2,6 +2,7 @@ const bcrypt = require('bcryptjs');
 const { User } = require('../models');
 const { isDbReady } = require('../config/database');
 const auditService = require('./auditService');
+const { assertEmail, assertPassword, assertUuid } = require('../utils/validate');
 
 const SALT_ROUNDS = 10;
 const ROLES = ['admin', 'analyst', 'viewer'];
@@ -33,10 +34,8 @@ async function createAdmin({ email, password, name }) {
   if (!isDbReady()) throw new Error('Database unavailable');
   if (!(await needsSetup())) throw new Error('Setup already completed');
 
-  const normalizedEmail = String(email).trim().toLowerCase();
-  if (!normalizedEmail || !password || password.length < 8) {
-    throw new Error('Valid email and password (min 8 characters) required');
-  }
+  const normalizedEmail = assertEmail(email);
+  assertPassword(password);
 
   const user = await User.create({
     email: normalizedEmail,
@@ -82,12 +81,9 @@ async function listUsers() {
 async function createUser({ email, password, name, role }, actorEmail) {
   if (!isDbReady()) throw new Error('Database unavailable');
 
-  const normalizedEmail = String(email).trim().toLowerCase();
+  const normalizedEmail = assertEmail(email);
   const userRole = ROLES.includes(role) ? role : 'analyst';
-
-  if (!normalizedEmail || !password || password.length < 8) {
-    throw new Error('Valid email and password (min 8 characters) required');
-  }
+  assertPassword(password);
 
   const existing = await User.findOne({ where: { email: normalizedEmail } });
   if (existing) throw new Error('Email already registered');
@@ -113,6 +109,7 @@ async function createUser({ email, password, name, role }, actorEmail) {
 
 async function updateUser(id, updates, actorEmail) {
   if (!isDbReady()) throw new Error('Database unavailable');
+  assertUuid(id, 'user id');
 
   const user = await User.findByPk(id);
   if (!user) throw new Error('User not found');
@@ -122,7 +119,7 @@ async function updateUser(id, updates, actorEmail) {
   if (updates.role !== undefined && ROLES.includes(updates.role)) patch.role = updates.role;
   if (updates.active !== undefined) patch.active = !!updates.active;
   if (updates.password) {
-    if (updates.password.length < 8) throw new Error('Password must be at least 8 characters');
+    assertPassword(updates.password);
     patch.passwordHash = await hashPassword(updates.password);
   }
 
@@ -141,6 +138,7 @@ async function updateUser(id, updates, actorEmail) {
 
 async function deleteUser(id, actorId, actorEmail) {
   if (!isDbReady()) throw new Error('Database unavailable');
+  assertUuid(id, 'user id');
   if (id === actorId) throw new Error('Cannot delete your own account');
 
   const user = await User.findByPk(id);

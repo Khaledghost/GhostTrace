@@ -29,11 +29,17 @@ Thumbs.db
 # Build output
 dist/
 build/
+ghost-trace-linux
+ghost-trace-win.exe
+behavioural-dna-soc*
+ghost-trace-*
 
 # Database
 *.db
 *.sqlite
 *.sqlite3
+data/datasources.json
+data/platform-db.json
 
 # Temporary files
 tmp/

@@ -108,6 +108,24 @@
   gap: 4px;
 }
 
+/* Always true red — theme maps --red to monochrome white/black */
+.alert-actions .btn-resolve {
+  background: #c62828 !important;
+  color: #ffffff !important;
+  border: 1px solid #c62828 !important;
+}
+
+.alert-actions .btn-resolve:hover {
+  background: #ef5350 !important;
+  border-color: #ef5350 !important;
+  color: #ffffff !important;
+}
+
+.alert-actions .btn-resolve:active {
+  background: #b71c1c !important;
+  border-color: #b71c1c !important;
+}
+
 .soc-kpi-row {
   display: grid;
   grid-template-columns: repeat(5, 1fr);

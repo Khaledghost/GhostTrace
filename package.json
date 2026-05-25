@@ -1,11 +1,18 @@
 {
-  "name": "behavioural-dna-soc",
+  "name": "ghost-trace",
   "version": "2.1.0",
   "description": "Open-source behavioral detection & response (BDR) platform for SOC and MDR teams",
   "main": "server.js",
+  "bin": "server.js",
+  "pkg": {
+    "assets": [
+      "public/**/*"
+    ]
+  },
   "scripts": {
     "start": "node server.js",
     "dev": "nodemon server.js",
+    "build:exe": "pkg . --targets node18-linux-x64,node18-win-x64",
     "docker:build": "docker compose build",
     "docker:up": "docker compose up -d --build",
     "docker:down": "docker compose down",
@@ -29,6 +36,7 @@
     "dotenv": "^16.0.3",
     "express": "^4.18.2",
     "express-rate-limit": "^6.8.1",
+    "geoip-lite": "^2.0.2",
     "helmet": "^7.0.0",
     "http-proxy-middleware": "^2.0.9",
     "ioredis": "^5.10.1",
@@ -39,9 +47,10 @@
     "node-fetch": "^3.3.2",
     "pg": "^8.11.3",
     "pg-hstore": "^2.3.4",
-    "sequelize": "^6.35.0"
+    "sequelize": "^6.37.8"
   },
   "devDependencies": {
-    "nodemon": "^3.1.0"
+    "nodemon": "^3.1.0",
+    "pkg": "^5.8.1"
   }
 }

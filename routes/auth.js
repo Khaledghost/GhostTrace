@@ -1,9 +1,20 @@
 const express = require('express');
+const rateLimit = require('express-rate-limit');
 const userService = require('../services/userService');
 const { isDbReady } = require('../config/database');
 const { authenticate, requireAdmin, signToken, setAuthCookie } = require('../middleware/auth');
+const { wrapRouter } = require('../utils/wrapRouter');
 
 const router = express.Router();
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: parseInt(process.env.AUTH_RATE_LIMIT_MAX || '30', 10),
+  standardHeaders: true,
+  legacyHeaders: false,
+  skipSuccessfulRequests: true,
+  message: { success: false, error: 'Too many authentication attempts. Try again later.' },
+});
 
 router.get('/setup-status', async (req, res) => {
   if (!isDbReady()) {
@@ -13,7 +24,7 @@ router.get('/setup-status', async (req, res) => {
   res.json({ success: true, needsSetup });
 });
 
-router.post('/setup', async (req, res) => {
+router.post('/setup', authLimiter, async (req, res, next) => {
   try {
     if (!isDbReady()) {
       return res.status(503).json({ success: false, error: 'Database unavailable' });
@@ -29,11 +40,14 @@ router.post('/setup', async (req, res) => {
 
     res.json({ success: true, user });
   } catch (err) {
-    res.status(400).json({ success: false, error: err.message });
+    if (err.message && !err.statusCode) {
+      return res.status(400).json({ success: false, error: err.message });
+    }
+    next(err);
   }
 });
 
-router.post('/login', async (req, res) => {
+router.post('/login', authLimiter, async (req, res, next) => {
   try {
     if (!isDbReady()) {
       return res.status(503).json({ success: false, error: 'Database unavailable' });
@@ -45,6 +59,9 @@ router.post('/login', async (req, res) => {
 
     const email = req.body.email || req.body.username;
     const { password } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ success: false, error: 'Email and password are required' });
+    }
 
     const user = await userService.authenticate(email, password);
     if (!user) {
@@ -55,12 +72,16 @@ router.post('/login', async (req, res) => {
     setAuthCookie(res, token);
     res.json({ success: true, user });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    next(err);
   }
 });
 
 router.post('/logout', (req, res) => {
-  res.clearCookie('auth_token');
+  res.clearCookie('auth_token', {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
+  });
   res.json({ success: true });
 });
 
@@ -85,42 +106,45 @@ router.get('/me', async (req, res) => {
   }
 });
 
-// ─── User management (admin only) ───────────────────────────────────────────
-
 router.get('/users', authenticate, requireAdmin, async (req, res) => {
-  try {
-    const users = await userService.listUsers();
-    res.json({ success: true, users });
-  } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
-  }
+  const users = await userService.listUsers();
+  res.json({ success: true, users });
 });
 
-router.post('/users', authenticate, requireAdmin, async (req, res) => {
+router.post('/users', authenticate, requireAdmin, async (req, res, next) => {
   try {
     const user = await userService.createUser(req.body, req.user.email);
     res.status(201).json({ success: true, user });
   } catch (err) {
-    res.status(400).json({ success: false, error: err.message });
+    if (err.message && !err.statusCode) {
+      return res.status(400).json({ success: false, error: err.message });
+    }
+    next(err);
   }
 });
 
-router.patch('/users/:id', authenticate, requireAdmin, async (req, res) => {
+router.patch('/users/:id', authenticate, requireAdmin, async (req, res, next) => {
   try {
     const user = await userService.updateUser(req.params.id, req.body, req.user.email);
     res.json({ success: true, user });
   } catch (err) {
-    res.status(400).json({ success: false, error: err.message });
+    if (err.message && !err.statusCode) {
+      return res.status(400).json({ success: false, error: err.message });
+    }
+    next(err);
   }
 });
 
-router.delete('/users/:id', authenticate, requireAdmin, async (req, res) => {
+router.delete('/users/:id', authenticate, requireAdmin, async (req, res, next) => {
   try {
     await userService.deleteUser(req.params.id, req.user.id, req.user.email);
     res.json({ success: true });
   } catch (err) {
-    res.status(400).json({ success: false, error: err.message });
+    if (err.message && !err.statusCode) {
+      return res.status(400).json({ success: false, error: err.message });
+    }
+    next(err);
   }
 });
 
-module.exports = router;
+module.exports = wrapRouter(router);

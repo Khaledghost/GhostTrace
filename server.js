@@ -19,6 +19,8 @@ const threatDetectionRoutes    = require('./routes/threatDetection');
 const behavioralTrackingRoutes = require('./routes/behavioralTracking');
 const loggerRoutes             = require('./routes/logger');
 const dataSourceRoutes         = require('./routes/datasources');
+const geoRoutes                = require('./routes/geo');
+const dbConnector              = require('./core/dbConnector');
 const alertRoutes              = require('./routes/alerts');
 const incidentRoutes           = require('./routes/incidents');
 const huntRoutes               = require('./routes/hunt');
@@ -28,10 +30,13 @@ const socRoutes                = require('./routes/soc');
 const integrationRoutes        = require('./routes/integrations');
 const aiRoutes                 = require('./routes/ai');
 const { errorHandler }         = require('./middleware/errorHandler');
+const { apiNotFound }          = require('./middleware/notFound');
+const { validateEnvironment }  = require('./config/security');
+const { wrapRouter }           = require('./utils/wrapRouter');
 const RequestLogger            = require('./middleware/requestLogger');
 const createProtectionMiddleware = require('./middleware/protection');
 const authRoutes = require('./routes/auth');
-const { authenticate, redirectIfNeedsSetup } = require('./middleware/auth');
+const { authenticate, redirectIfNeedsSetup, requireRole } = require('./middleware/auth');
 
 const { connectDB, isDbReady } = require('./config/database');
 
@@ -40,6 +45,11 @@ const PORT = parseInt(process.env.PORT || '3001', 10);
 const HOST = process.env.HOST || '0.0.0.0';
 const TARGET_ORIGIN = process.env.TARGET_ORIGIN || '';
 const NODE_ENV = process.env.NODE_ENV || 'development';
+
+const requireWriteRole = (roles) => (req, res, next) => {
+  if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return next();
+  return requireRole(...roles)(req, res, next);
+};
 
 if (process.env.TRUST_PROXY === 'true') {
   app.set('trust proxy', 1);
@@ -78,8 +88,8 @@ app.use('/api/', rateLimit({
 
 // ─── Body parsing ─────────────────────────────────────────────────────────────
 
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: process.env.BODY_LIMIT || '1mb' }));
+app.use(express.urlencoded({ extended: true, limit: process.env.BODY_LIMIT || '1mb' }));
 app.use(cookieParser());
 
 // ─── Request logging ──────────────────────────────────────────────────────────
@@ -106,7 +116,8 @@ app.use(createProtectionMiddleware({
     '/api/dna',
     '/api/behavior/track',
     '/login.html',
-    /^\/api\/(soc|alerts|incidents|hunt|policies|audit|threats|logger|sources|integrations|ai)\//,
+    /^\/api\/(soc|alerts|incidents|hunt|policies|audit|threats|logger|sources|integrations|ai|geo)\//,
+    '/api/geo/stream',
     '/api/logger/logs/live',
     '/api/threats/feed',
     '/api/soc/feed',
@@ -122,20 +133,21 @@ app.use(createProtectionMiddleware({
 app.use('/api/auth', authRoutes);
 
 // Public API for behavior tracking
-app.use('/api/behavior', behavioralTrackingRoutes);
+app.use('/api/behavior', wrapRouter(behavioralTrackingRoutes));
 
 // Protected SOC / MDR APIs
-app.use('/api/soc', authenticate, socRoutes);
-app.use('/api/alerts', authenticate, alertRoutes);
-app.use('/api/incidents', authenticate, incidentRoutes);
-app.use('/api/hunt', authenticate, huntRoutes);
-app.use('/api/policies', authenticate, policyRoutes);
-app.use('/api/audit', authenticate, auditRoutes);
-app.use('/api/integrations', authenticate, integrationRoutes);
-app.use('/api/ai', authenticate, aiRoutes);
-app.use('/api/threats', authenticate, threatDetectionRoutes);
-app.use('/api/logger', authenticate, loggerRoutes);
-app.use('/api/sources', authenticate, dataSourceRoutes);
+app.use('/api/soc', authenticate, wrapRouter(socRoutes));
+app.use('/api/alerts', authenticate, requireWriteRole(['admin', 'analyst']), wrapRouter(alertRoutes));
+app.use('/api/incidents', authenticate, requireWriteRole(['admin', 'analyst']), wrapRouter(incidentRoutes));
+app.use('/api/hunt', authenticate, requireWriteRole(['admin', 'analyst']), wrapRouter(huntRoutes));
+app.use('/api/policies', authenticate, requireRole('admin'), wrapRouter(policyRoutes));
+app.use('/api/audit', authenticate, wrapRouter(auditRoutes));
+app.use('/api/integrations', authenticate, requireRole('admin'), wrapRouter(integrationRoutes));
+app.use('/api/ai', authenticate, requireRole('admin', 'analyst'), wrapRouter(aiRoutes));
+app.use('/api/threats', authenticate, requireWriteRole(['admin', 'analyst']), wrapRouter(threatDetectionRoutes));
+app.use('/api/logger', authenticate, requireWriteRole(['admin', 'analyst']), wrapRouter(loggerRoutes));
+app.use('/api/sources', authenticate, requireRole('admin'), wrapRouter(dataSourceRoutes));
+app.use('/api/geo', authenticate, wrapRouter(geoRoutes));
 
 // Static Dashboard (Order matters: public files first, then index protection)
 app.use(express.static(path.join(__dirname, 'public'), { index: false }));
@@ -202,22 +214,35 @@ if (TARGET_ORIGIN) {
   }));
 }
 
-// ─── SPA fallback ─────────────────────────────────────────────────────────────
+// ─── SPA fallback (authenticated; skip missing static assets) ─────────────────
 
-app.get('*', (req, res, next) => {
+app.get('*', redirectIfNeedsSetup, authenticate, (req, res, next) => {
   if (req.path.startsWith('/api/')) return next();
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  if (/\.[a-z0-9]{1,8}$/i.test(req.path)) return next();
+  res.sendFile(path.join(__dirname, 'public', 'index.html'), (err) => {
+    if (err) next(err);
+  });
 });
 
-// ─── Error handler ────────────────────────────────────────────────────────────
+// ─── API 404 + error handler ──────────────────────────────────────────────────
 
+app.use('/api', apiNotFound);
 app.use(errorHandler);
 
 // ─── Start ────────────────────────────────────────────────────────────────────
 
 async function start() {
+  validateEnvironment();
+
   if (process.env.DB_ENABLED !== 'false') {
     await connectDB();
+  }
+
+  if (process.env.RESTORE_DATASOURCES !== 'false') {
+    const restored = await dbConnector.restorePersisted();
+    if (restored.length) {
+      console.log(`  📡  Restored ${restored.filter((r) => r.ok).length}/${restored.length} data source(s)`);
+    }
   }
 
   const server = app.listen(PORT, HOST, () => {

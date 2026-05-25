@@ -1,48 +1,40 @@
 /**
  * DbConnector — Manages live connections to PostgreSQL, MySQL, MongoDB, Redis.
- *
- * Each data source is identified by a unique `id` and holds its own connection pool.
- * Connections are tested before being stored.
  */
 
 const EventEmitter = require('events');
-
-// ── Drivers (loaded lazily so missing drivers don't crash startup) ──────────
+const { mergeConfig, toDisplayUri } = require('../utils/connectionParser');
+const dataSourceStore = require('../services/dataSourceStore');
 
 function getPg()      { try { return require('pg'); } catch { return null; } }
 function getMysql()   { try { return require('mysql2/promise'); } catch { return null; } }
 function getMongo()   { try { return require('mongoose'); } catch { return null; } }
 function getRedis()   { try { return require('ioredis'); } catch { return null; } }
 
-// ── Connection Store ──────────────────────────────────────────────────────────
-
 class DbConnector extends EventEmitter {
   constructor() {
     super();
-    /** @type {Map<string, DataSource>} */
     this._sources = new Map();
+    this._passwords = new Map();
   }
 
-  // ── Public API ─────────────────────────────────────────────────────────────
-
-  /**
-   * Add and connect a data source.
-   * @param {DataSourceConfig} config
-   * @returns {Promise<DataSource>}
-   */
-  async addSource(config) {
+  async addSource(rawConfig) {
+    const config = mergeConfig(rawConfig);
     this._validateConfig(config);
+
     const existing = this._sources.get(config.id);
     if (existing) await this.removeSource(config.id);
 
+    if (config.password) this._passwords.set(config.id, config.password);
+
     const source = {
-      id:       config.id,
-      label:    config.label || config.id,
-      type:     config.type,      // 'postgres'|'mysql'|'mongodb'|'redis'
-      config:   this._sanitize(config),
-      status:   'connecting',
-      error:    null,
-      conn:     null,
+      id: config.id,
+      label: config.label || config.id,
+      type: config.type,
+      config: this._sanitize(config),
+      status: 'connecting',
+      error: null,
+      conn: null,
       connectedAt: null,
       scanResult: null,
     };
@@ -53,6 +45,7 @@ class DbConnector extends EventEmitter {
       source.conn = await this._connect(config);
       source.status = 'connected';
       source.connectedAt = new Date().toISOString();
+      dataSourceStore.upsert({ ...config, password: config.password });
       this.emit('connected', source);
     } catch (err) {
       source.status = 'error';
@@ -64,12 +57,45 @@ class DbConnector extends EventEmitter {
     return this._publicView(source);
   }
 
+  async updateSource(id, rawPatch) {
+    const existing = dataSourceStore.loadAll().find((s) => s.id === id)
+      || this._sources.get(id);
+    if (!existing) throw new Error('Source not found');
+
+    const merged = mergeConfig({
+      ...existing,
+      ...rawPatch,
+      id,
+      password: rawPatch.password || this._passwords.get(id) || existing.password,
+    });
+
+    await this.removeSource(id);
+    return this.addSource(merged);
+  }
+
   async removeSource(id) {
     const source = this._sources.get(id);
-    if (!source) return;
-    await this._disconnect(source);
-    this._sources.delete(id);
+    if (source) {
+      await this._disconnect(source);
+      this._sources.delete(id);
+    }
+    dataSourceStore.remove(id);
+    this._passwords.delete(id);
     this.emit('removed', { id });
+  }
+
+  async restorePersisted() {
+    const saved = dataSourceStore.loadAll();
+    const results = [];
+    for (const cfg of saved) {
+      try {
+        await this.addSource(cfg);
+        results.push({ id: cfg.id, ok: true });
+      } catch (err) {
+        results.push({ id: cfg.id, ok: false, error: err.message });
+      }
+    }
+    return results;
   }
 
   getSource(id) {
@@ -78,7 +104,7 @@ class DbConnector extends EventEmitter {
   }
 
   getAll() {
-    return [...this._sources.values()].map(s => this._publicView(s));
+    return [...this._sources.values()].map((s) => this._publicView(s));
   }
 
   getRawConn(id) {
@@ -89,33 +115,50 @@ class DbConnector extends EventEmitter {
     return this._sources.get(id) || null;
   }
 
-  // ── Connection helpers ─────────────────────────────────────────────────────
+  async testConnection(rawConfig) {
+    const config = mergeConfig(rawConfig);
+    this._validateConfig(config);
+    const conn = await this._connect(config);
+    await this._disconnect({ type: config.type, conn });
+    return { ok: true, uri: toDisplayUri(config) };
+  }
 
   async _connect(cfg) {
     switch (cfg.type) {
       case 'postgres': return this._connectPg(cfg);
-      case 'mysql':    return this._connectMysql(cfg);
-      case 'mongodb':  return this._connectMongo(cfg);
-      case 'redis':    return this._connectRedis(cfg);
+      case 'mysql': return this._connectMysql(cfg);
+      case 'mongodb': return this._connectMongo(cfg);
+      case 'redis': return this._connectRedis(cfg);
       default: throw new Error(`Unsupported type: ${cfg.type}`);
     }
   }
 
   async _connectPg(cfg) {
     const { Pool } = getPg();
-    const pool = new Pool({
-      host:     cfg.host || 'localhost',
-      port:     parseInt(cfg.port || 5432, 10),
-      database: cfg.database,
-      user:     cfg.username,
-      password: cfg.password,
-      ssl:      cfg.ssl ? { rejectUnauthorized: false } : false,
-      max:      5,
+    if (!Pool) throw new Error('pg driver not installed');
+
+    const poolOpts = {
+      max: cfg.poolMax || 5,
       idleTimeoutMillis: 30000,
-      connectionTimeoutMillis: 5000,
-    });
-    // Test the connection
+      connectionTimeoutMillis: cfg.connectTimeoutMs || 5000,
+      ssl: cfg.ssl ? { rejectUnauthorized: cfg.rejectUnauthorized !== false } : false,
+    };
+
+    if (cfg.connectionMode === 'uri' && cfg.connectionString) {
+      Object.assign(poolOpts, { connectionString: cfg.connectionString });
+    } else {
+      Object.assign(poolOpts, {
+        host: cfg.host || 'localhost',
+        port: parseInt(cfg.port || 5432, 10),
+        database: cfg.database,
+        user: cfg.username,
+        password: cfg.password,
+      });
+    }
+
+    const pool = new Pool(poolOpts);
     const client = await pool.connect();
+    if (cfg.schema) await client.query(`SET search_path TO ${cfg.schema}`);
     await client.query('SELECT 1');
     client.release();
     return pool;
@@ -123,27 +166,37 @@ class DbConnector extends EventEmitter {
 
   async _connectMysql(cfg) {
     const mysql = getMysql();
-    const pool = mysql.createPool({
-      host:     cfg.host || 'localhost',
-      port:     parseInt(cfg.port || 3306, 10),
-      database: cfg.database,
-      user:     cfg.username,
-      password: cfg.password,
-      ssl:      cfg.ssl ? {} : undefined,
-      connectionLimit: 5,
-      connectTimeout: 5000,
-    });
+    if (!mysql) throw new Error('mysql2 driver not installed');
+
+    const base = {
+      connectionLimit: cfg.poolMax || 5,
+      connectTimeout: cfg.connectTimeoutMs || 5000,
+      ssl: cfg.ssl ? { rejectUnauthorized: cfg.rejectUnauthorized !== false } : undefined,
+    };
+
+    const pool = cfg.connectionMode === 'uri' && cfg.connectionString
+      ? mysql.createPool({ ...base, uri: cfg.connectionString })
+      : mysql.createPool({
+        ...base,
+        host: cfg.host || 'localhost',
+        port: parseInt(cfg.port || 3306, 10),
+        database: cfg.database,
+        user: cfg.username,
+        password: cfg.password,
+      });
+
     await pool.query('SELECT 1');
     return pool;
   }
 
   async _connectMongo(cfg) {
     const mongoose = getMongo();
+    if (!mongoose) throw new Error('mongoose driver not installed');
+
     const uri = cfg.connectionString || this._buildMongoUri(cfg);
-    // Each source gets its own mongoose Connection instance
     const conn = mongoose.createConnection(uri, {
-      serverSelectionTimeoutMS: 5000,
-      maxPoolSize: 5,
+      serverSelectionTimeoutMS: cfg.connectTimeoutMs || 5000,
+      maxPoolSize: cfg.poolMax || 5,
     });
     await conn.asPromise();
     return conn;
@@ -151,16 +204,28 @@ class DbConnector extends EventEmitter {
 
   async _connectRedis(cfg) {
     const Redis = getRedis();
-    const client = new Redis({
-      host:     cfg.host || 'localhost',
-      port:     parseInt(cfg.port || 6379, 10),
-      password: cfg.password || undefined,
-      db:       parseInt(cfg.database || 0, 10),
-      tls:      cfg.ssl ? {} : undefined,
-      connectTimeout: 5000,
+    if (!Redis) throw new Error('ioredis driver not installed');
+
+    const opts = {
+      connectTimeout: cfg.connectTimeoutMs || 5000,
       maxRetriesPerRequest: 1,
       lazyConnect: true,
-    });
+      tls: cfg.ssl ? { rejectUnauthorized: cfg.rejectUnauthorized !== false } : undefined,
+    };
+
+    let client;
+    if (cfg.connectionMode === 'uri' && cfg.connectionString) {
+      client = new Redis(cfg.connectionString, opts);
+    } else {
+      client = new Redis({
+        ...opts,
+        host: cfg.host || 'localhost',
+        port: parseInt(cfg.port || 6379, 10),
+        password: cfg.password || undefined,
+        db: parseInt(cfg.database || 0, 10),
+      });
+    }
+
     await client.connect();
     await client.ping();
     return client;
@@ -173,54 +238,61 @@ class DbConnector extends EventEmitter {
       else if (source.type === 'mysql') await source.conn.end();
       else if (source.type === 'mongodb') await source.conn.close();
       else if (source.type === 'redis') source.conn.disconnect();
-    } catch (_) {}
+    } catch (_) { /* ignore */ }
   }
 
-  // ── Helpers ────────────────────────────────────────────────────────────────
-
   _buildMongoUri(cfg) {
-    const auth = cfg.username ? `${encodeURIComponent(cfg.username)}:${encodeURIComponent(cfg.password||'')}@` : '';
-    return `mongodb://${auth}${cfg.host||'localhost'}:${cfg.port||27017}/${cfg.database||''}`;
+    const auth = cfg.username
+      ? `${encodeURIComponent(cfg.username)}:${encodeURIComponent(cfg.password || '')}@`
+      : '';
+    return `mongodb://${auth}${cfg.host || 'localhost'}:${cfg.port || 27017}/${cfg.database || ''}`;
   }
 
   _validateConfig(cfg) {
-    if (!cfg.id)   throw new Error('Data source must have an id');
+    if (!cfg.id) throw new Error('Data source must have an id');
     if (!cfg.type) throw new Error('Data source must have a type');
-    const TYPES = ['postgres','mysql','mongodb','redis'];
-    if (!TYPES.includes(cfg.type)) throw new Error(`type must be one of: ${TYPES.join(', ')}`);
+    const TYPES = ['postgres', 'mysql', 'mongodb', 'redis', 'mariadb'];
+    if (!TYPES.includes(cfg.type)) {
+      throw new Error(`type must be one of: ${TYPES.join(', ')}`);
+    }
+    if (cfg.connectionMode === 'uri') {
+      if (!cfg.connectionString) throw new Error('Connection URI is required in URI mode');
+      return;
+    }
+    if (cfg.type !== 'mongodb' && !cfg.host) throw new Error('Host is required');
+    if (cfg.type !== 'redis' && !cfg.database && cfg.type !== 'mongodb') {
+      throw new Error('Database name is required');
+    }
   }
 
   _sanitize(cfg) {
-    const ports = { postgres: 5432, mysql: 3306, mongodb: 27017, redis: 6379 };
     return {
-      host:             cfg.host || 'localhost',
-      port:             parseInt(cfg.port, 10) || ports[cfg.type] || 5432,
-      database:         cfg.database,
-      username:         cfg.username,
-      ssl:              cfg.ssl,
-      connectionString: cfg.connectionString,
-      // password stored but marked
-      _hasPassword: !!(cfg.password),
+      host: cfg.host,
+      port: cfg.port,
+      database: cfg.database,
+      username: cfg.username,
+      ssl: cfg.ssl,
+      schema: cfg.schema,
+      connectionMode: cfg.connectionMode || 'fields',
+      connectionString: cfg.connectionMode === 'uri' ? '***' : undefined,
+      poolMax: cfg.poolMax,
+      connectTimeoutMs: cfg.connectTimeoutMs,
+      rejectUnauthorized: cfg.rejectUnauthorized,
+      _hasPassword: !!(cfg.password || this._passwords.get(cfg.id)),
+      displayUri: toDisplayUri(cfg).replace(/:([^:@/]+)@/, ':***@'),
     };
   }
 
   _publicView(source) {
     return {
-      id:          source.id,
-      label:       source.label,
-      type:        source.type,
-      status:      source.status,
-      error:       source.error,
+      id: source.id,
+      label: source.label,
+      type: source.type,
+      status: source.status,
+      error: source.error,
       connectedAt: source.connectedAt,
-      scanResult:  source.scanResult,
-      config: {
-        host:     source.config.host,
-        port:     source.config.port,
-        database: source.config.database,
-        username: source.config.username,
-        ssl:      source.config.ssl,
-        hasPassword: source.config._hasPassword,
-      },
+      scanResult: source.scanResult,
+      config: source.config,
     };
   }
 }

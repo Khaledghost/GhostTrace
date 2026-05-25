@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const alertService = require('../services/alertService');
 const auditService = require('../services/auditService');
+const { assertUrl } = require('../utils/validate');
 
 const webhooks = new Map();
 
@@ -15,6 +16,11 @@ router.get('/webhooks', (req, res) => {
 router.post('/webhooks', (req, res) => {
   const { name, url, events = ['alert.created'] } = req.body;
   if (!name || !url) return res.status(400).json({ success: false, error: 'name and url required' });
+  try {
+    assertUrl(url, 'Webhook URL');
+  } catch (err) {
+    return res.status(400).json({ success: false, error: err.message });
+  }
   const id = `wh-${Date.now()}`;
   webhooks.set(id, { name, url, events, enabled: true, createdAt: new Date().toISOString() });
   res.status(201).json({ success: true, data: { id, name, url, events } });

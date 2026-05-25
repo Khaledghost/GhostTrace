@@ -1,5 +1,5 @@
 /**
- * Authenticated API helper — all SOC routes require session cookie.
+ * Authenticated API helper — session cookie, structured errors, toast feedback.
  */
 (() => {
   'use strict';
@@ -20,6 +20,9 @@
       const err = new Error(data.error || data.message || `HTTP ${res.status}`);
       err.status = res.status;
       err.data = data;
+      if (!options.silent && window.GT?.handleApiError) {
+        window.GT.handleApiError(err, options.context);
+      }
       throw err;
     }
     return data;

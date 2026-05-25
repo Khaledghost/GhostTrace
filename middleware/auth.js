@@ -17,11 +17,13 @@ function signToken(user) {
 }
 
 function setAuthCookie(res, token) {
+  const isProd = process.env.NODE_ENV === 'production';
   res.cookie('auth_token', token, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
+    secure: isProd,
+    sameSite: isProd ? 'strict' : 'lax',
     maxAge: 7 * 24 * 60 * 60 * 1000,
+    path: '/',
   });
 }
 
@@ -64,6 +66,13 @@ const requireAdmin = (req, res, next) => {
   next();
 };
 
+const requireRole = (...roles) => (req, res, next) => {
+  if (!req.user || !roles.includes(req.user.role)) {
+    return res.status(403).json({ success: false, error: 'Insufficient permissions' });
+  }
+  next();
+};
+
 /**
  * Redirect to setup when no users exist (HTML routes).
  */
@@ -81,6 +90,7 @@ const redirectIfNeedsSetup = async (req, res, next) => {
 module.exports = {
   authenticate,
   requireAdmin,
+  requireRole,
   redirectIfNeedsSetup,
   signToken,
   setAuthCookie,

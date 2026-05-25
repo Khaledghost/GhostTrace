@@ -20,18 +20,14 @@ function applyThemePreset(preset) {
   document.documentElement.setAttribute('data-theme', theme);
   localStorage.setItem('theme_preset', theme);
   updateThemeToggleUi(theme);
-  document.getElementById('themePanel')?.classList.remove('open');
+  window.Globe?.redraw?.();
 }
 
 function updateThemeToggleUi(theme) {
   const iconClass = theme === 'light' ? 'fas fa-moon' : 'fas fa-sun';
   const title = theme === 'light' ? 'Switch to dark mode' : 'Switch to light mode';
-  ['themeToggleIcon', 'topbarThemeIcon'].forEach((id) => {
-    const el = document.getElementById(id);
-    if (el) el.className = iconClass;
-  });
-  const btn = document.getElementById('themeToggle');
-  if (btn) btn.title = title;
+  const topbarIcon = document.getElementById('topbarThemeIcon');
+  if (topbarIcon) topbarIcon.className = iconClass;
   const topbar = document.getElementById('topbarThemeBtn');
   if (topbar) topbar.title = title;
 }
@@ -56,24 +52,14 @@ function initTheme() {
       applyThemePreset(pick.dataset.themePick);
       return;
     }
-    const toggle = e.target.closest('#themeToggle, #topbarThemeBtn');
+    const toggle = e.target.closest('#topbarThemeBtn');
     if (toggle) {
       e.preventDefault();
       e.stopPropagation();
       toggleTheme();
-      return;
-    }
-    if (!e.target.closest('.theme-customizer')) {
-      document.getElementById('themePanel')?.classList.remove('open');
     }
   });
 
-  document.getElementById('themeToggle')?.addEventListener('click', (e) => {
-    e.stopPropagation();
-    if (e.altKey) {
-      document.getElementById('themePanel')?.classList.toggle('open');
-    }
-  });
 }
 
 window.setThemePreset = applyThemePreset;
@@ -92,7 +78,7 @@ function navigate(page) {
     dashboard:'Overview', threats:'Reports', profiles:'Profiles',
     analyze:'AI Triage', logs:'Request Logs', sources:'Data Sources', policies:'Security Policies',
     alerts:'Alert Queue', incidents:'Incidents', hunt:'Threat Hunt', mitre:'MITRE ATT&CK',
-    integrations:'Integrations', audit:'Audit Trail', users:'Team',
+    integrations:'Integrations', audit:'Audit Trail', users:'Team', globe:'Global Traffic',
   };
   document.getElementById('topbarTitle').textContent = titles[page] || page;
   
@@ -108,6 +94,9 @@ function navigate(page) {
   else if (page === 'mitre' && window.SOC?.loadMitre) window.SOC.loadMitre();
   else if (page === 'ai-settings' && window.AI?.loadAiSettingsPage) window.AI.loadAiSettingsPage();
   else if (page === 'users') loadUsers();
+  else if (page === 'globe') {
+    window.Globe?.activate?.();
+  }
 }
 
 function bindStaticControls() {
@@ -239,9 +228,17 @@ async function loadCommandCenter() {
 }
 
 function defaultApiFetch(path, options = {}) {
+  if (window.apiFetch) return window.apiFetch(path, options);
   return fetch(path, { credentials: 'include', ...options }).then(async (res) => {
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.error || res.statusText);
+    if (!res.ok) {
+      const err = new Error(data.error || res.statusText);
+      err.status = res.status;
+      if (!options.silent && window.GT?.handleApiError) {
+        window.GT.handleApiError(err, options.context);
+      }
+      throw err;
+    }
     return data;
   });
 }
@@ -257,9 +254,9 @@ function renderDashboardAlerts(alerts) {
     const id = a.id || '';
     const sev = a.severity || 'medium';
     const title = (a.title || 'Alert').replace(/'/g, "\\'");
-    return `<div class="threat-item" style="padding:8px;cursor:pointer;border:1px solid var(--border);margin-bottom:4px" onclick="window.openAlertDrawer && openAlertDrawer('${id}')">
+    return `<div class="threat-item" style="padding:8px;cursor:pointer;border:1px solid var(--border);margin-bottom:4px" data-alert-id="${id}">
       <span class="badge">${sev.toUpperCase()}</span>
-      <span style="font-size:12px;margin-left:8px">${title}</span>
+      <span style="font-size:12px;margin-left:8px">${(a.title || 'Alert').replace(/</g, '&lt;')}</span>
     </div>`;
   }).join('');
 }
@@ -375,15 +372,20 @@ async function loadProfiles() {
     const r = await fetch(`${API}/threats/profiles`);
     const d = await r.json();
     if (d.success && d.data?.length) {
-      el.innerHTML = d.data.map(p => `
+      el.innerHTML = d.data.map((p) => {
+        const key = esc(p.key);
+        const level = ['critical', 'high', 'medium', 'green'].includes(p.threatLevel) ? p.threatLevel : 'green';
+        const label = esc(level);
+        return `
         <div class="pb-table-row cols-profiles" onclick="window.openProfileDrawer(${JSON.stringify(p).replace(/"/g, '&quot;')})">
-          <span style="font-weight: 600; font-family: var(--mono); text-overflow: ellipsis; overflow: hidden; white-space: nowrap;">${p.key}</span>
-          <span><span class="badge ${p.threatLevel === 'high' ? 'badge-orange' : p.threatLevel === 'critical' ? 'badge-red' : p.threatLevel === 'medium' ? 'badge-yellow' : p.threatLevel === 'green'}">${p.threatLevel}</span></span>
+          <span style="font-weight: 600; font-family: var(--mono); text-overflow: ellipsis; overflow: hidden; white-space: nowrap;">${key}</span>
+          <span><span class="badge ${level === 'high' ? 'badge-orange' : level === 'critical' ? 'badge-red' : level === 'medium' ? 'badge-yellow' : 'badge-green'}">${label}</span></span>
           <span class="mono">${p.requestCount || 0}</span>
           <span class="mono" style="font-weight: 700; color: ${scoreColor(p.riskScore)}">${p.riskScore || 0}</span>
           <span class="mono">${p.knownIpCount || 0}</span>
           <span class="mono">${p.knownDeviceCount || 0}</span>
-        </div>`).join('');
+        </div>`;
+      }).join('');
     } else {
       el.innerHTML = '<div class="empty-state"><i class="fas fa-fingerprint"></i><p>No profiles yet</p></div>';
     }
@@ -472,7 +474,7 @@ function renderAnalyzeResult(data, activity) {
     </div>
     ${anomalyTags?`<div class="anomaly-tags">${anomalyTags}</div>`:''}
     ${aiHtml}
-    <div style="font-size:11px;color:var(--text3)">Profile key: ${data.profileKey||'?'} · Requests: ${data.requestCount||0}</div>`;
+      <div style="font-size:11px;color:var(--text3)">Profile key: ${esc(data.profileKey||'?')} · Requests: ${data.requestCount||0}</div>`;
 }
 
 // ── Logs Page ─────────────────────────────────────────────────────────────
@@ -483,14 +485,21 @@ async function loadLogs() {
     const r = await fetch(`${API}/logger/logs${method?`?method=${method}`:''}`);
     const d = await r.json();
     if (d.success && d.data?.length) {
-      el.innerHTML = d.data.map(log => `
+      el.innerHTML = d.data.map((log) => {
+        const method = String(log.method || 'GET').toUpperCase();
+        const methodClass = method.replace(/[^A-Z]/g, '') || 'GET';
+        const path = esc(log.path);
+        const ip = esc(log.ip || '?');
+        const geo = log.geo?.country ? ` · ${esc(log.geo.city || '')} ${esc(log.geo.country)}` : '';
+        return `
         <div class="pb-table-row cols-logs" onclick="window.openLogDrawer(${JSON.stringify(log).replace(/"/g, '&quot;')})">
-          <span><span class="log-method method-${log.method}">${log.method}</span></span>
-          <span style="font-family: var(--mono); font-weight: 500; text-overflow: ellipsis; overflow: hidden; white-space: nowrap;">${log.path}</span>
+          <span><span class="log-method method-${methodClass}">${esc(method)}</span></span>
+          <span style="font-family: var(--mono); font-weight: 500; text-overflow: ellipsis; overflow: hidden; white-space: nowrap;">${path}</span>
           <span><span class="log-status status-${Math.floor((log.statusCode||200)/100)}">${log.statusCode||'?'}</span></span>
-          <span class="mono">${log.responseTime||'?'}ms · ${log.ip||'?'}</span>
+          <span class="mono">${log.responseTime||'?'}ms · ${ip}${geo}</span>
           <span class="mono">${timeAgo(log.timestamp)}</span>
-        </div>`).join('');
+        </div>`;
+      }).join('');
     } else {
       el.innerHTML = '<div class="empty-state"><i class="fas fa-terminal"></i><p>No logs available</p></div>';
     }
@@ -761,7 +770,8 @@ async function bootApp() {
       if (navUsers) navUsers.style.display = '';
       bindUserManagement();
     }
-  } catch (_) {
+  } catch (e) {
+    if (window.GT) window.GT.toast('Could not verify session', 'error');
     window.location.href = '/login.html';
     return;
   }
@@ -810,6 +820,8 @@ if (document.readyState === 'loading') {
   window._loadSources = loadSources;
 
   async function loadSources() {
+    initPlatformDbUi();
+    toggleSourceFormMode();
     await Promise.all([loadSourcesList(), loadAllJobs()]);
   }
 
@@ -840,11 +852,26 @@ if (document.readyState === 'loading') {
     if (el) el.innerHTML = `<span style="color:var(--red)"><i class="fas fa-times"></i> ${msg}</span>`;
   }
 
+  function toggleSourceFormMode() {
+    const mode = document.getElementById('sf-mode')?.value || 'fields';
+    const isUri = mode === 'uri';
+    document.querySelectorAll('.sf-fields-only').forEach((el) => {
+      el.style.display = isUri ? 'none' : '';
+    });
+    const uriEl = document.querySelector('.sf-uri-only');
+    if (uriEl) uriEl.style.display = isUri ? 'block' : 'none';
+    const schemaGrp = document.getElementById('sf-schema-group');
+    if (schemaGrp) schemaGrp.style.display = (isUri || document.getElementById('sf-type')?.value !== 'postgres') ? 'none' : '';
+  }
+
   function validateSourcePayload(payload) {
     if (!payload.id) return 'Unique ID is required';
+    if (payload.connectionMode === 'uri') {
+      if (!payload.connectionString) return 'Connection URI is required';
+      return null;
+    }
     if (!payload.host) return 'Host is required';
     if (!payload.database && payload.type !== 'redis') return 'Database name is required';
-    if (!payload.password && payload.type === 'postgres') return 'Password is required (same as DB_PASS in .env for Docker)';
     return null;
   }
 
@@ -878,7 +905,7 @@ if (document.readyState === 'loading') {
             <div class="source-name">${s.label||s.id}</div>
             <div class="source-status src-${s.status}"></div>
           </div>
-          <div class="source-meta">${s.type.toUpperCase()} · ${s.config?.host||'?'}:${s.config?.port||'?'} / ${s.config?.database||'?'}</div>
+          <div class="source-meta">${s.type.toUpperCase()} · ${s.config?.connectionMode === 'uri' ? 'URI' : `${s.config?.host||'?'}:${s.config?.port||'?'}`} / ${s.config?.database||'?'}</div>
           <div class="source-actions">
             <button class="btn-xs" onclick="event.stopPropagation();scanSource('${s.id}')"><i class="fas fa-radar"></i> Scan</button>
             <button class="btn-xs" onclick="event.stopPropagation();monitorSource('${s.id}')"><i class="fas fa-play"></i> Monitor</button>
@@ -930,10 +957,12 @@ if (document.readyState === 'loading') {
       if (show) loadSourceDefaults(true);
     });
 
+    document.getElementById('sf-mode')?.addEventListener('change', toggleSourceFormMode);
     document.getElementById('sf-type')?.addEventListener('change', function() {
       const ports = { postgres: 5432, mysql: 3306, mongodb: 27017, redis: 6379 };
       const portEl = document.getElementById('sf-port');
       if (portEl) portEl.value = ports[this.value] || '';
+      toggleSourceFormMode();
       loadSourceDefaults(true);
     });
 
@@ -985,16 +1014,94 @@ if (document.readyState === 'loading') {
   }
 
   function getFormPayload() {
-    return {
+    const mode = document.getElementById('sf-mode')?.value || 'fields';
+    const base = {
       id: document.getElementById('sf-id').value.trim(),
       label: document.getElementById('sf-label').value.trim(),
       type: document.getElementById('sf-type').value,
+      connectionMode: mode,
+      ssl: document.getElementById('sf-ssl').checked,
+      poolMax: parseInt(document.getElementById('sf-pool')?.value, 10) || 5,
+      connectTimeoutMs: parseInt(document.getElementById('sf-timeout')?.value, 10) || 5000,
+      rejectUnauthorized: document.getElementById('sf-reject-unauth')?.checked !== false,
+    };
+    if (mode === 'uri') {
+      base.connectionString = document.getElementById('sf-uri')?.value.trim();
+      return base;
+    }
+    return {
+      ...base,
       host: document.getElementById('sf-host').value.trim(),
       port: parseInt(document.getElementById('sf-port').value, 10) || 5432,
       database: document.getElementById('sf-database').value.trim(),
       username: document.getElementById('sf-username').value.trim(),
       password: document.getElementById('sf-password').value,
-      ssl: document.getElementById('sf-ssl').checked,
+      schema: document.getElementById('sf-schema')?.value.trim() || undefined,
+    };
+  }
+
+  async function loadPlatformDbForm() {
+    try {
+      const { data } = await srcApi('/api/sources/platform');
+      const mode = data.connectionMode || 'fields';
+      document.getElementById('pf-mode').value = mode;
+      document.getElementById('pf-host').value = data.host || '';
+      document.getElementById('pf-port').value = data.port || '';
+      document.getElementById('pf-database').value = data.database || '';
+      document.getElementById('pf-username').value = data.username || '';
+      togglePlatformFormMode();
+      const st = document.getElementById('platformDbStatus');
+      if (st) st.textContent = data.connected ? '● Connected' : '○ Not connected — check settings';
+    } catch (_) {}
+  }
+
+  function togglePlatformFormMode() {
+    const isUri = document.getElementById('pf-mode')?.value === 'uri';
+    document.querySelectorAll('.pf-fields').forEach((el) => { el.style.display = isUri ? 'none' : ''; });
+    const uri = document.querySelector('.pf-uri');
+    if (uri) uri.style.display = isUri ? 'block' : 'none';
+  }
+
+  let _platformUiReady = false;
+  function initPlatformDbUi() {
+    if (_platformUiReady) { loadPlatformDbForm(); return; }
+    _platformUiReady = true;
+    document.getElementById('pf-mode')?.addEventListener('change', togglePlatformFormMode);
+    document.getElementById('pf-testBtn')?.addEventListener('click', async () => {
+      const st = document.getElementById('platformDbStatus');
+      try {
+        const body = getPlatformPayload();
+        await srcApi('/api/sources/platform/test', { method: 'POST', body: JSON.stringify(body) });
+        if (st) st.textContent = '✓ Connection test passed';
+      } catch (e) {
+        if (st) st.textContent = '✗ ' + e.message;
+      }
+    });
+    document.getElementById('platformDbForm')?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const st = document.getElementById('platformDbStatus');
+      try {
+        const d = await srcApi('/api/sources/platform', { method: 'PUT', body: JSON.stringify(getPlatformPayload()) });
+        if (st) st.textContent = d.message || 'Saved';
+      } catch (err) {
+        if (st) st.textContent = err.message;
+      }
+    });
+    loadPlatformDbForm();
+  }
+
+  function getPlatformPayload() {
+    const mode = document.getElementById('pf-mode')?.value || 'fields';
+    if (mode === 'uri') {
+      return { connectionMode: 'uri', connectionString: document.getElementById('pf-uri')?.value.trim() };
+    }
+    return {
+      connectionMode: 'fields',
+      host: document.getElementById('pf-host')?.value.trim(),
+      port: parseInt(document.getElementById('pf-port')?.value, 10) || 5432,
+      database: document.getElementById('pf-database')?.value.trim(),
+      username: document.getElementById('pf-username')?.value.trim(),
+      password: document.getElementById('pf-password')?.value,
     };
   }
 
@@ -1215,18 +1322,19 @@ if (document.readyState === 'loading') {
   document.getElementById('pbDrawerBackdrop')?.addEventListener('click', closeDrawer);
 
   window.openProfileDrawer = function(p) {
-    const title = `<i class="fas fa-fingerprint" style="color:var(--primary)"></i> Profile: ${p.key}`;
+    const level = ['critical', 'high', 'medium', 'green'].includes(p.threatLevel) ? p.threatLevel : 'green';
+    const title = `<i class="fas fa-fingerprint" style="color:var(--primary)"></i> Profile: ${esc(p.key)}`;
     const html = `
       <div class="field-box">
         <div class="field-label">Record Key ID</div>
-        <div class="field-value mono">${p.key}</div>
+        <div class="field-value mono">${esc(p.key)}</div>
       </div>
       
       <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:10px">
         <div class="field-box">
           <div class="field-label">Threat Level</div>
           <div class="field-value">
-            <span class="badge ${p.threatLevel === 'critical' ? 'badge-red' : p.threatLevel === 'high' ? 'badge-orange' : p.threatLevel === 'medium' ? 'badge-yellow' : 'badge-green'}">${p.threatLevel.toUpperCase()}</span>
+            <span class="badge ${level === 'critical' ? 'badge-red' : level === 'high' ? 'badge-orange' : level === 'medium' ? 'badge-yellow' : 'badge-green'}">${esc(level.toUpperCase())}</span>
           </div>
         </div>
         <div class="field-box">
@@ -1360,13 +1468,15 @@ if (document.readyState === 'loading') {
 
   window.openLogDrawer = function(log) {
     const title = `<i class="fas fa-terminal" style="color:var(--primary)"></i> Log Transaction Entry`;
+    const method = String(log.method || 'GET').toUpperCase();
+    const methodClass = method.replace(/[^A-Z]/g, '') || 'GET';
     const statusColor = log.statusCode >= 500 ? 'badge-red' : log.statusCode >= 400 ? 'badge-orange' : log.statusCode >= 300 ? 'badge-yellow' : 'badge-green';
 
     const html = `
       <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px">
         <div class="field-box">
           <div class="field-label">HTTP Method</div>
-          <div class="field-value"><span class="log-method method-${log.method}">${log.method}</span></div>
+          <div class="field-value"><span class="log-method method-${methodClass}">${esc(method)}</span></div>
         </div>
         <div class="field-box">
           <div class="field-label">Response Status</div>
@@ -1376,13 +1486,13 @@ if (document.readyState === 'loading') {
 
       <div class="field-box" style="margin-top:10px">
         <div class="field-label">URI Route Path</div>
-        <div class="field-value mono">${log.path}</div>
+        <div class="field-value mono">${esc(log.path)}</div>
       </div>
 
       <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:10px">
         <div class="field-box">
           <div class="field-label">Origin IP</div>
-          <div class="field-value mono">${log.ip || '—'}</div>
+          <div class="field-value mono">${esc(log.ip || '—')}</div>
         </div>
         <div class="field-box">
           <div class="field-label">Response Latency</div>
@@ -1397,7 +1507,7 @@ if (document.readyState === 'loading') {
 
       <div class="field-box" style="margin-top:10px">
         <div class="field-label">User Agent Details</div>
-        <div class="field-value mono" style="font-size:11px">${log.userAgent || '—'}</div>
+        <div class="field-value mono" style="font-size:11px">${esc(log.userAgent || '—')}</div>
       </div>
     `;
     openDrawer(title, html);

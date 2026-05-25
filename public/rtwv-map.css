@@ -1,0 +1,233 @@
+/* Nomisoft-style realtime visitors map */
+
+.rtwv-layout {
+  display: grid;
+  grid-template-columns: 1fr 340px;
+  gap: 16px;
+  align-items: start;
+}
+
+.rtwv-map-card {
+  padding: 16px;
+  overflow: hidden;
+}
+
+.rtwv-map-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+  gap: 12px;
+}
+
+.rtwv-desc {
+  font-size: 11px;
+  color: var(--text-dim);
+  margin: 0 0 12px;
+  line-height: 1.45;
+}
+
+.rtwv-map-wrap {
+  width: 100%;
+  min-height: min(62vh, 620px);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.rtwv-map-host {
+  width: 100%;
+  line-height: 0;
+}
+
+.rtwv-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  background: var(--bg);
+}
+
+[data-theme="light"] .rtwv-svg {
+  background: #e8eef4;
+}
+
+/* Country shapes — theme aware grayscale */
+.rtwv-countries path {
+  fill: #4a4a4a;
+  stroke: #2a2a2a;
+  stroke-width: 0.5px;
+  vector-effect: non-scaling-stroke;
+}
+
+[data-theme="light"] .rtwv-countries path {
+  fill: #b8c0c8;
+  stroke: #8a939c;
+}
+
+/* Animated routes (Nomisoft colors) */
+.rtwv-route {
+  fill: none;
+  stroke-width: 1.2px;
+  vector-effect: non-scaling-stroke;
+  opacity: 0.85;
+}
+
+.rtwv-route-200 { stroke: #00c853; }
+.rtwv-route-301 { stroke: #2196f3; }
+.rtwv-route-404 { stroke: #ff1744; }
+.rtwv-route-other { stroke: #9e9e9e; }
+
+[data-theme="light"] .rtwv-route-200 { stroke: #2e7d32; }
+[data-theme="light"] .rtwv-route-301 { stroke: #1565c0; }
+[data-theme="light"] .rtwv-route-404 { stroke: #c62828; }
+
+/* Visitor flash + server */
+.rtwv-visitor-flash {
+  fill: #fff;
+  stroke: none;
+  pointer-events: none;
+}
+
+.rtwv-flash-200 { fill: #69f0ae; }
+.rtwv-flash-301 { fill: #40c4ff; }
+.rtwv-flash-404 { fill: #ff5252; }
+.rtwv-flash-other { fill: #bdbdbd; }
+
+.rtwv-server-ring {
+  fill: none;
+  stroke: #ffab00;
+  stroke-width: 2px;
+  opacity: 0.9;
+}
+
+.rtwv-server-core {
+  fill: #ffab00;
+  stroke: #fff;
+  stroke-width: 1px;
+}
+
+[data-theme="light"] .rtwv-server-core {
+  stroke: #000;
+}
+
+.rtwv-server-label {
+  font-size: 10px;
+  font-weight: 700;
+  fill: var(--text);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.rtwv-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-top: 10px;
+  font-size: 10px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.rtwv-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.rtwv-swatch {
+  display: inline-block;
+  width: 18px;
+  height: 3px;
+  border-radius: 1px;
+}
+
+.rtwv-swatch-200 { background: #00c853; }
+.rtwv-swatch-301 { background: #2196f3; }
+.rtwv-swatch-404 { background: #ff1744; }
+.rtwv-swatch-server {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ffab00;
+}
+
+/* Live feed */
+.rtwv-side {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+}
+
+.rtwv-feed-card {
+  padding: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 180px);
+}
+
+.rtwv-feed-card .theme-panel-title {
+  padding: 12px 12px 0;
+}
+
+.rtwv-feed-scroll {
+  overflow-y: auto;
+  flex: 1;
+  max-height: 520px;
+}
+
+.rtwv-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+
+.rtwv-table thead th {
+  position: sticky;
+  top: 0;
+  background: var(--surface-sub);
+  color: var(--text-dim);
+  text-align: left;
+  padding: 8px 10px;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  border-bottom: 1px solid var(--border);
+  z-index: 1;
+}
+
+.rtwv-table tbody td {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rtwv-table tbody tr:nth-child(odd) td {
+  background: var(--surface-sub);
+}
+
+.rtwv-status {
+  font-weight: 700;
+  font-size: 10px;
+}
+
+.rtwv-status-200 { color: #00c853; }
+.rtwv-status-301 { color: #2196f3; }
+.rtwv-status-404 { color: #ff1744; }
+.rtwv-status-other { color: var(--text-dim); }
+
+@media (max-width: 1100px) {
+  .rtwv-layout {
+    grid-template-columns: 1fr;
+  }
+  .rtwv-feed-scroll {
+    max-height: 280px;
+  }
+}

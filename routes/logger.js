@@ -46,6 +46,36 @@ router.get('/logs/live', (req, res) => {
   });
 });
 
+router.get('/logs/stats', (req, res) => {
+  try {
+    const logs = RequestLogger.getLogs(1000);
+    const stats = {
+      total: logs.length,
+      withAi: logs.filter((l) => l.aiAnalysis).length,
+      byMethod: {},
+      byStatusCode: {},
+      byAiRisk: {},
+      averageResponseTime: 0,
+    };
+
+    let totalRt = 0;
+    logs.forEach((log) => {
+      stats.byMethod[log.method] = (stats.byMethod[log.method] || 0) + 1;
+      const g = `${Math.floor(log.statusCode / 100)}xx`;
+      stats.byStatusCode[g] = (stats.byStatusCode[g] || 0) + 1;
+      if (log.aiAnalysis?.riskLevel) {
+        stats.byAiRisk[log.aiAnalysis.riskLevel] = (stats.byAiRisk[log.aiAnalysis.riskLevel] || 0) + 1;
+      }
+      totalRt += log.responseTime;
+    });
+    stats.averageResponseTime = logs.length ? Math.round(totalRt / logs.length) : 0;
+
+    res.json({ success: true, data: stats });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 router.get('/logs/:id', (req, res) => {
   const log = RequestLogger.getById(req.params.id);
   if (!log) return res.status(404).json({ success: false, error: 'Log not found' });
@@ -90,36 +120,6 @@ router.post('/logs/analyze-batch', async (req, res, next) => {
 router.delete('/logs', (req, res) => {
   RequestLogger.clearLogs();
   res.json({ success: true, message: 'Logs cleared' });
-});
-
-router.get('/logs/stats', (req, res) => {
-  try {
-    const logs = RequestLogger.getLogs(1000);
-    const stats = {
-      total: logs.length,
-      withAi: logs.filter((l) => l.aiAnalysis).length,
-      byMethod: {},
-      byStatusCode: {},
-      byAiRisk: {},
-      averageResponseTime: 0,
-    };
-
-    let totalRt = 0;
-    logs.forEach((log) => {
-      stats.byMethod[log.method] = (stats.byMethod[log.method] || 0) + 1;
-      const g = `${Math.floor(log.statusCode / 100)}xx`;
-      stats.byStatusCode[g] = (stats.byStatusCode[g] || 0) + 1;
-      if (log.aiAnalysis?.riskLevel) {
-        stats.byAiRisk[log.aiAnalysis.riskLevel] = (stats.byAiRisk[log.aiAnalysis.riskLevel] || 0) + 1;
-      }
-      totalRt += log.responseTime;
-    });
-    stats.averageResponseTime = logs.length ? Math.round(totalRt / logs.length) : 0;
-
-    res.json({ success: true, data: stats });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
 });
 
 module.exports = router;

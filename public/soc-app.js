@@ -10,13 +10,22 @@ let socSSE = null;
 const SEV_CLASS = { critical: 'badge-critical', high: 'badge-high', medium: 'badge-medium', low: 'badge-low', info: 'badge-low' };
 
 async function api(path, opts = {}) {
-  const res = await fetch(`${API}${path}`, {
+  const fullPath = path.startsWith('/api') ? path : `${API}${path}`;
+  if (window.apiFetch) {
+    return window.apiFetch(fullPath, { ...opts, context: opts.context || 'SOC' });
+  }
+  const res = await fetch(fullPath, {
     credentials: 'include',
     headers: { 'Content-Type': 'application/json', ...(opts.headers || {}) },
     ...opts,
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || res.statusText);
+  if (!res.ok) {
+    const err = new Error(data.error || res.statusText);
+    err.status = res.status;
+    if (!opts.silent && window.GT?.handleApiError) window.GT.handleApiError(err, 'SOC');
+    throw err;
+  }
   return data;
 }
 
@@ -29,17 +38,6 @@ function esc(s) {
 function fmtTime(d) {
   return d ? new Date(d).toLocaleString() : '—';
 }
-
-// ── Extend navigation from app.js ─────────────────────────────────────────
-const SOC_PAGES = {
-  alerts: 'Alert Queue',
-  incidents: 'Incidents',
-  hunt: 'Threat Hunt',
-  mitre: 'MITRE ATT&CK',
-  integrations: 'Integrations',
-  audit: 'Audit Trail',
-  'ai-settings': 'AI Engine',
-};
 
 function socNavigate(page) {
   if (page === 'alerts') loadAlerts();
@@ -64,7 +62,6 @@ function patchNavigate() {
   window.navigate._socPatched = true;
 }
 
-// ── Command Center enhancements ───────────────────────────────────────────
 async function loadCommandCenter() {
   const main = window.loadCommandCenter;
   if (main && main !== loadCommandCenter) return main();
@@ -103,7 +100,7 @@ function renderRecentSocAlerts(alerts) {
     return;
   }
   box.innerHTML = alerts.slice(0, 6).map((a) => `
-    <div class="threat-row" style="cursor:pointer" onclick="openAlertDrawer('${a.id}')">
+    <div class="threat-row" style="cursor:pointer" data-alert-id="${a.id}">
       <span class="badge ${SEV_CLASS[a.severity] || ''}">${esc(a.severity)}</span>
       <span style="flex:1;font-size:12px">${esc(a.title)}</span>
       <span class="mono" style="font-size:10px;color:var(--text-dim)">${fmtTime(a.detectedAt)}</span>
@@ -111,7 +108,6 @@ function renderRecentSocAlerts(alerts) {
   `).join('');
 }
 
-// ── Alerts ──────────────────────────────────────────────────────────────────
 async function loadAlerts() {
   const status = document.getElementById('alertStatusFilter')?.value;
   const severity = document.getElementById('alertSeverityFilter')?.value;
@@ -132,40 +128,39 @@ async function loadAlerts() {
       return;
     }
     table.innerHTML = items.map((a) => `
-      <div class="pb-table-row cols-alerts" onclick="openAlertDrawer('${a.id}')">
+      <div class="pb-table-row cols-alerts" data-alert-id="${a.id}">
         <span class="mono">${fmtTime(a.detectedAt)}</span>
         <span><span class="badge ${SEV_CLASS[a.severity]}">${esc(a.severity)}</span></span>
         <span><strong>${esc(a.title)}</strong><br><small style="color:var(--text-dim)">${esc(a.ipAddress || a.profileKey || '')}</small></span>
         <span class="mono" style="font-size:10px">${(a.mitreTechniques || []).slice(0,2).join(', ')}</span>
         <span>${esc(a.status)}</span>
-        <span class="alert-actions" onclick="event.stopPropagation()">
-          ${a.status === 'new' ? `<button class="btn-xs" onclick="ackAlert('${a.id}')">Ack</button>` : ''}
-          <button class="btn-xs btn-danger" onclick="resolveAlert('${a.id}')">Resolve</button>
+        <span class="alert-actions">
+          ${a.status === 'new' ? `<button type="button" class="btn-xs" data-ack-alert="${a.id}">Ack</button>` : ''}
+          <button type="button" class="btn-xs btn-resolve" data-resolve-alert="${a.id}">Resolve</button>
         </span>
       </div>
     `).join('');
-    document.getElementById('alertBadge').textContent = items.filter((i) => ['new','acknowledged','investigating'].includes(i.status)).length;
+
+    document.getElementById('alertBadge').textContent = items.filter((it) => ['new','acknowledged','investigating'].includes(it.status)).length;
   } catch (e) {
     table.innerHTML = `<div class="empty-state"><p>${esc(e.message)}</p></div>`;
   }
 }
 
-window.ackAlert = async (id) => {
+async function ackAlert(id) {
   await api(`/alerts/${id}/acknowledge`, { method: 'POST' });
   loadAlerts();
-};
+}
 
-window.resolveAlert = async (id) => {
+async function resolveAlert(id) {
   const notes = prompt('Resolution notes (optional):') || '';
   await api(`/alerts/${id}/resolve`, { method: 'POST', body: JSON.stringify({ notes }) });
   loadAlerts();
-};
+}
 
-window.openAlertDrawer = async (id) => {
+async function openAlertDrawer(id) {
   try {
     const { data: a } = await api(`/alerts/${id}`);
-    const drawer = document.getElementById('pbDrawer');
-    const backdrop = document.getElementById('pbDrawerBackdrop');
     document.getElementById('pbDrawerTitle').innerHTML = `<i class="fas fa-bell"></i> Alert ${esc(a.id?.slice(0,8))}`;
     document.getElementById('pbDrawerContent').innerHTML = `
       <div class="field-box"><div class="field-label">Title</div><div class="field-value">${esc(a.title)}</div></div>
@@ -179,21 +174,25 @@ window.openAlertDrawer = async (id) => {
       ${a.aiExplanation ? `<div class="field-box"><div class="field-label">AI Triage</div><div class="field-value" style="font-size:12px">${esc(a.aiExplanation)}</div></div>` : ''}
       <div class="field-box"><div class="field-label">Raw Activity</div>
         <pre class="mono" style="font-size:10px;max-height:120px;overflow:auto">${esc(JSON.stringify(a.rawActivity,null,2))}</pre></div>
-      <button class="btn-primary" style="margin-top:12px" onclick="createIncidentFromAlert('${a.id}')">Escalate to Incident</button>
+      <button type="button" class="btn-primary" style="margin-top:12px" data-escalate-alert="${a.id}">Escalate to Incident</button>
     `;
-    drawer?.classList.add('open');
-    backdrop?.classList.add('open');
+    document.getElementById('pbDrawer')?.classList.add('open');
+    document.getElementById('pbDrawerBackdrop')?.classList.add('open');
   } catch (e) { alert(e.message); }
-};
+}
 
-window.createIncidentFromAlert = async (alertId) => {
+async function createIncidentFromAlert(alertId) {
   const title = prompt('Incident title:', 'Security incident from alert');
   if (!title) return;
   await api('/incidents', { method: 'POST', body: JSON.stringify({ title, alertIds: [alertId], severity: 'high' }) });
-  navigate('incidents');
-};
+  window.navigate('incidents');
+}
 
-// ── Incidents ───────────────────────────────────────────────────────────────
+window.openAlertDrawer = openAlertDrawer;
+window.ackAlert = ackAlert;
+window.resolveAlert = resolveAlert;
+window.createIncidentFromAlert = createIncidentFromAlert;
+
 async function loadIncidents() {
   const grid = document.getElementById('incidentsGrid');
   if (!grid) return;
@@ -202,7 +201,7 @@ async function loadIncidents() {
   try {
     const { items } = await api(`/incidents${params}`);
     grid.innerHTML = items.length ? items.map((i) => `
-      <div class="incident-card" onclick="openIncidentDrawer('${i.id}')">
+      <div class="incident-card" data-incident-id="${i.id}">
         <div style="display:flex;justify-content:space-between">
           <span class="badge ${SEV_CLASS[i.severity]}">${esc(i.severity)}</span>
           <span style="font-size:11px;color:var(--text-dim)">P${i.priority}</span>
@@ -220,12 +219,12 @@ async function loadIncidents() {
   }
 }
 
-window.openIncidentDrawer = async (id) => {
+async function openIncidentDrawer(id) {
   const { data: i } = await api(`/incidents/${id}`);
   document.getElementById('pbDrawerTitle').innerHTML = `<i class="fas fa-file-medical"></i> ${esc(i.title)}`;
   document.getElementById('pbDrawerContent').innerHTML = `
     <div class="field-box"><div class="field-label">Status</div>
-      <select id="incStatus" onchange="updateIncident('${i.id}', this.value)">
+      <select id="incStatus" data-incident-id="${i.id}">
         ${['open','investigating','contained','resolved','closed'].map((s) =>
           `<option value="${s}" ${i.status===s?'selected':''}>${s}</option>`).join('')}
       </select></div>
@@ -239,12 +238,15 @@ window.openIncidentDrawer = async (id) => {
   `;
   document.getElementById('pbDrawer')?.classList.add('open');
   document.getElementById('pbDrawerBackdrop')?.classList.add('open');
-};
+}
 
-window.updateIncident = async (id, status) => {
+async function updateIncident(id, status) {
   await api(`/incidents/${id}`, { method: 'PATCH', body: JSON.stringify({ status }) });
   loadIncidents();
-};
+}
+
+window.openIncidentDrawer = openIncidentDrawer;
+window.updateIncident = updateIncident;
 
 document.getElementById('newIncidentBtn')?.addEventListener('click', async () => {
   const title = prompt('Incident title:');
@@ -253,7 +255,6 @@ document.getElementById('newIncidentBtn')?.addEventListener('click', async () =>
   loadIncidents();
 });
 
-// ── Hunt ────────────────────────────────────────────────────────────────────
 document.getElementById('huntRunBtn')?.addEventListener('click', async () => {
   const body = {
     q: document.getElementById('huntQ')?.value,
@@ -267,7 +268,7 @@ document.getElementById('huntRunBtn')?.addEventListener('click', async () => {
     const { data } = await api('/hunt/query', { method: 'POST', body: JSON.stringify(body) });
     const alerts = data.alerts || [];
     box.innerHTML = alerts.length ? alerts.map((a) => `
-      <div class="pb-table-row" style="padding:12px;border-bottom:1px solid var(--border);cursor:pointer" onclick="openAlertDrawer('${a.id}')">
+      <div class="pb-table-row" style="padding:12px;border-bottom:1px solid var(--border);cursor:pointer" data-alert-id="${a.id}">
         <span class="badge ${SEV_CLASS[a.severity]}">${esc(a.severity)}</span>
         <strong style="margin-left:8px">${esc(a.title)}</strong>
         <span style="float:right;font-size:11px;color:var(--text-dim)">${fmtTime(a.detectedAt)}</span>
@@ -289,7 +290,6 @@ async function loadHuntIocs() {
   } catch (_) {}
 }
 
-// ── MITRE ───────────────────────────────────────────────────────────────────
 async function loadMitre() {
   const box = document.getElementById('mitreMatrix');
   if (!box) return;
@@ -308,7 +308,6 @@ async function loadMitre() {
   }
 }
 
-// ── Policies (backend) ────────────────────────────────────────────────────────
 window.loadPolicies = async function loadPoliciesBackend() {
   const grid = document.getElementById('policiesGrid');
   if (!grid) return;
@@ -328,7 +327,6 @@ window.loadPolicies = async function loadPoliciesBackend() {
   }
 };
 
-// ── Integrations & Audit ──────────────────────────────────────────────────────
 async function loadIntegrations() {
   const box = document.getElementById('webhooksList');
   if (!box) return;
@@ -366,7 +364,6 @@ async function loadAudit() {
   }
 }
 
-// ── Fix legacy threat resolve → alerts API ────────────────────────────────────
 window.resolveThreatEvent = async function(id) {
   try {
     await api(`/alerts/${id}/resolve`, { method: 'POST', body: JSON.stringify({ notes: 'Resolved from telemetry view' }) });
@@ -375,7 +372,6 @@ window.resolveThreatEvent = async function(id) {
   } catch (e) { alert(e.message); }
 };
 
-// ── SOC SSE (command center + alerts) ─────────────────────────────────────────
 function startSocSSE() {
   if (socSSE) socSSE.close();
   socSSE = new EventSource(`${API}/soc/feed`);
@@ -385,19 +381,67 @@ function startSocSSE() {
       if (command?.kpis && document.getElementById('alertBadge')) {
         document.getElementById('alertBadge').textContent = command.kpis.openAlerts || 0;
       }
-      if (currentPage === 'dashboard') renderRecentSocAlerts(command?.recentAlerts || []);
-      if (currentPage === 'mitre') loadMitre();
+      if (typeof currentPage !== 'undefined' && currentPage === 'dashboard') {
+        renderRecentSocAlerts(command?.recentAlerts || []);
+      }
+      if (typeof currentPage !== 'undefined' && currentPage === 'mitre') loadMitre();
     } catch (_) {}
   };
 }
 
-// ── Event bindings ────────────────────────────────────────────────────────────
+function bindSocDelegatedClicks() {
+  if (bindSocDelegatedClicks._done) return;
+  bindSocDelegatedClicks._done = true;
+
+  document.getElementById('alertsTable')?.addEventListener('click', (e) => {
+    const ack = e.target.closest('[data-ack-alert]');
+    if (ack) {
+      e.stopPropagation();
+      ackAlert(ack.dataset.ackAlert);
+      return;
+    }
+    const resolve = e.target.closest('[data-resolve-alert]');
+    if (resolve) {
+      e.stopPropagation();
+      resolveAlert(resolve.dataset.resolveAlert);
+      return;
+    }
+    if (e.target.closest('.alert-actions')) return;
+    const row = e.target.closest('[data-alert-id]');
+    if (row) openAlertDrawer(row.dataset.alertId);
+  });
+
+  document.getElementById('recentThreats')?.addEventListener('click', (e) => {
+    const row = e.target.closest('[data-alert-id]');
+    if (row) openAlertDrawer(row.dataset.alertId);
+  });
+
+  document.getElementById('huntResults')?.addEventListener('click', (e) => {
+    const row = e.target.closest('[data-alert-id]');
+    if (row) openAlertDrawer(row.dataset.alertId);
+  });
+
+  document.getElementById('incidentsGrid')?.addEventListener('click', (e) => {
+    const card = e.target.closest('[data-incident-id]');
+    if (card) openIncidentDrawer(card.dataset.incidentId);
+  });
+
+  document.getElementById('pbDrawerContent')?.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-escalate-alert]');
+    if (btn) createIncidentFromAlert(btn.dataset.escalateAlert);
+  });
+
+  document.getElementById('pbDrawerContent')?.addEventListener('change', (e) => {
+    const sel = e.target.closest('#incStatus[data-incident-id]');
+    if (sel) updateIncident(sel.dataset.incidentId, sel.value);
+  });
+}
+
 document.getElementById('refreshAlertsBtn')?.addEventListener('click', loadAlerts);
 document.getElementById('alertStatusFilter')?.addEventListener('change', loadAlerts);
 document.getElementById('alertSeverityFilter')?.addEventListener('change', loadAlerts);
 document.getElementById('incidentStatusFilter')?.addEventListener('change', loadIncidents);
 
-// Patch app.js titles
 const titles = {
   dashboard: 'Overview', threats: 'Live Telemetry', profiles: 'Behavioral Profiles',
   analyze: 'AI Triage', logs: 'Request Logs', sources: 'Data Sources', policies: 'Policies',
@@ -407,9 +451,9 @@ const titles = {
 
 document.addEventListener('DOMContentLoaded', () => {
   patchNavigate();
+  bindSocDelegatedClicks();
   startSocSSE();
 });
 
-// Expose for app.js integration
 window.SOC = { loadAlerts, loadIncidents, loadCommandCenter, loadMitre, titles };
 })();
