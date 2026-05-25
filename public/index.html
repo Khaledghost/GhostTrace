@@ -1,146 +1,786 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Threat Detection</title>
-    <link rel="stylesheet" href="/styles.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GhostTrace | SOC Platform</title>
+  <link rel="icon" href="/assets/logo-dark.png" type="image/png">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="soc.css">
+  <link rel="stylesheet" href="ghosttrace.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
-    <nav class="navbar">
-        <div class="nav-brand">
-            <span class="status-dot green pulse"></span>
-            <h1>DNA - THREAT DETECTION</h1>
+  
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-logo">
+      <div class="brand-row">
+        <img src="/assets/logo-light.png" alt="GhostTrace" class="brand-logo brand-logo--black" width="48" height="48">
+        <img src="/assets/logo-dark.png" alt="GhostTrace" class="brand-logo brand-logo--white" width="48" height="48">
+        <div class="brand-wordmark">
+          <span class="brand-name">GhostTrace</span>
+          <span class="brand-sub">SOFTWARE</span>
         </div>
-        <div class="nav-links">
-            <button class="nav-link active" data-section="dashboard">DASHBOARD</button>
-            <button class="nav-link" data-section="track">TRACK</button>
-            <button class="nav-link" data-section="logs">LOGS</button>
-        </div>
+      </div>
+      <button id="menuToggle" style="display: none; background: none; border: none; color: var(--text); cursor: pointer;">
+        <i class="fas fa-bars"></i>
+      </button>
+    </div>
+
+    <nav class="nav-section">
+      <div class="nav-label">Operations</div>
+      <a href="#" class="nav-item active" data-section="dashboard" id="nav-dashboard">
+        <i class="fas fa-gauge-high"></i> <span>Command Center</span>
+      </a>
+      <a href="#" class="nav-item" data-section="alerts" id="nav-alerts">
+        <i class="fas fa-bell"></i> <span>Alert Queue</span>
+        <span class="nav-badge" id="alertBadge">0</span>
+      </a>
+      <a href="#" class="nav-item" data-section="incidents" id="nav-incidents">
+        <i class="fas fa-file-medical"></i> <span>Incidents</span>
+      </a>
+      <a href="#" class="nav-item" data-section="hunt" id="nav-hunt">
+        <i class="fas fa-crosshairs"></i> <span>Threat Hunt</span>
+      </a>
+      <a href="#" class="nav-item" data-section="mitre" id="nav-mitre">
+        <i class="fas fa-sitemap"></i> <span>MITRE ATT&CK</span>
+      </a>
     </nav>
 
-    <main class="container">
-        <!-- Dashboard Section -->
-        <section id="dashboard" class="section active">
-            <h2>DASHBOARD</h2>
+    <nav class="nav-section">
+      <div class="nav-label">Intelligence</div>
+      <a href="#" class="nav-item" data-section="profiles" id="nav-profiles">
+        <i class="fas fa-fingerprint"></i> <span>Behavioral Profiles</span>
+      </a>
+      <a href="#" class="nav-item" data-section="threats" id="nav-threats">
+        <i class="fas fa-shield-virus"></i> <span>Live Telemetry</span>
+      </a>
+      <a href="#" class="nav-item" data-section="sources" id="nav-sources">
+        <i class="fas fa-database"></i> <span>Data Sources</span>
+      </a>
+      <a href="#" class="nav-item" data-section="logs" id="nav-logs">
+        <i class="fas fa-terminal"></i> <span>Request Logs</span>
+      </a>
+    </nav>
+
+    <nav class="nav-section">
+      <div class="nav-label">Platform</div>
+      <a href="#" class="nav-item" data-section="ai-settings" id="nav-ai-settings">
+        <i class="fas fa-robot"></i> <span>AI Engine</span>
+      </a>
+      <a href="#" class="nav-item" data-section="analyze" id="nav-analyze">
+        <i class="fas fa-brain"></i> <span>AI Triage</span>
+      </a>
+      <a href="#" class="nav-item" data-section="policies" id="nav-policies">
+        <i class="fas fa-sliders"></i> <span>Policies</span>
+      </a>
+      <a href="#" class="nav-item" data-section="integrations" id="nav-integrations">
+        <i class="fas fa-plug"></i> <span>Integrations</span>
+      </a>
+      <a href="#" class="nav-item" data-section="audit" id="nav-audit">
+        <i class="fas fa-clipboard-list"></i> <span>Audit Trail</span>
+      </a>
+      <a href="#" class="nav-item" data-section="users" id="nav-users" style="display:none">
+        <i class="fas fa-users-cog"></i> <span>Team</span>
+      </a>
+    </nav>
+
+    <!-- Sidebar Footer -->
+    <div class="sidebar-footer">
+      <div class="user-avatar" id="userInitial">A</div>
+      <div class="sidebar-footer-info">
+        <div class="sidebar-footer-name" id="userName">Admin</div>
+        <div class="sidebar-footer-status">
+          <div class="status-dot green" id="sidebarDot"></div>
+          <span id="sidebarStatus">Live</span>
+          <span style="opacity: 0.5;">·</span>
+          <span id="aiStatus" style="font-size: 9px; color: var(--accent);">AI Enabled</span>
+        </div>
+      </div>
+      <button class="btn-xs" id="logoutBtn" style="background:none; border:none; color: var(--text-dim); cursor: pointer; padding: 4px;">
+        <i class="fas fa-sign-out-alt"></i>
+      </button>
+    </div>
+  </aside>
+
+  <!-- Main View Area -->
+  <main class="main">
+    <header class="topbar">
+      <div class="topbar-brand">
+        <img src="/assets/logo-light.png" alt="" class="brand-logo brand-logo--black" height="32">
+        <img src="/assets/logo-dark.png" alt="" class="brand-logo brand-logo--white" height="32">
+        <h2 id="topbarTitle">Overview</h2>
+      </div>
+      <div class="topbar-actions">
+        <span class="trace-pill" id="traceStatusPill">
+          <span class="trace-dot"></span>
+          Trace Active
+        </span>
+        <button type="button" id="topbarThemeBtn" class="btn-sm" title="Toggle theme">
+          <i class="fas fa-sun" id="topbarThemeIcon"></i>
+        </button>
+        <button id="refreshBtn" class="btn-sm">
+          <i class="fas fa-sync-alt"></i> Sync
+        </button>
+      </div>
+    </header>
+
+    <div class="content">
+      
+      <!-- ==================== PAGE: ALERT QUEUE ==================== -->
+      <section class="page" id="page-alerts">
+        <div class="filter-bar soc-filter">
+          <select id="alertStatusFilter"><option value="">All statuses</option><option value="new">New</option><option value="acknowledged">Acknowledged</option><option value="investigating">Investigating</option><option value="resolved">Resolved</option></select>
+          <select id="alertSeverityFilter"><option value="">All severities</option><option value="critical">Critical</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option></select>
+          <input type="text" id="alertSearch" placeholder="Search alerts, IPs, MITRE techniques...">
+          <button class="btn-sm btn-primary" id="refreshAlertsBtn"><i class="fas fa-sync"></i> Refresh</button>
+        </div>
+        <div class="pb-table-wrapper">
+          <div class="pb-table-header cols-alerts">
+            <span>Time</span><span>Severity</span><span>Alert</span><span>MITRE</span><span>Status</span><span>Actions</span>
+          </div>
+          <div id="alertsTable" class="pb-table-body"></div>
+        </div>
+      </section>
+
+      <!-- ==================== PAGE: INCIDENTS ==================== -->
+      <section class="page" id="page-incidents">
+        <div style="display:flex;gap:10px;margin-bottom:16px;">
+          <button class="btn-primary" id="newIncidentBtn"><i class="fas fa-plus"></i> New Incident</button>
+          <select id="incidentStatusFilter"><option value="">All</option><option value="open">Open</option><option value="investigating">Investigating</option><option value="contained">Contained</option><option value="resolved">Resolved</option></select>
+        </div>
+        <div id="incidentsGrid" class="incident-cards"></div>
+      </section>
+
+      <!-- ==================== PAGE: THREAT HUNT ==================== -->
+      <section class="page" id="page-hunt">
+        <div class="card" style="padding:16px;margin-bottom:16px;">
+          <h4 class="theme-panel-title"><i class="fas fa-crosshairs"></i> Hunt Query</h4>
+          <div class="hunt-form">
+            <input type="text" id="huntQ" placeholder="Free text search">
+            <input type="text" id="huntIp" placeholder="IP address">
+            <input type="text" id="huntMitre" placeholder="MITRE technique e.g. T1190">
+            <select id="huntSeverity"><option value="">Severity</option><option value="critical">Critical</option><option value="high">High</option></select>
+            <button class="btn-accent" id="huntRunBtn"><i class="fas fa-play"></i> Run Hunt</button>
+          </div>
+        </div>
+        <div id="huntResults" class="pb-table-body"></div>
+        <div class="card" style="padding:16px;margin-top:16px;">
+          <h4 class="theme-panel-title">IOC Summary</h4>
+          <div id="huntIocs" class="ioc-grid"></div>
+        </div>
+      </section>
+
+      <!-- ==================== PAGE: MITRE ==================== -->
+      <section class="page" id="page-mitre">
+        <div id="mitreMatrix" class="mitre-matrix"></div>
+      </section>
+
+      <!-- ==================== PAGE: INTEGRATIONS ==================== -->
+      <section class="page" id="page-integrations">
+        <div class="card" style="padding:16px;margin-bottom:16px;">
+          <h4 class="theme-panel-title">Webhook Ingest</h4>
+          <p style="color:var(--text-dim);font-size:12px;margin-bottom:12px;">POST external alerts to <code class="mono">/api/integrations/ingest</code></p>
+          <div class="form-group"><label>Webhook URL (register)</label><input id="whUrl" placeholder="https://your-siem/webhook"></div>
+          <button class="btn-primary" id="registerWhBtn">Register Webhook</button>
+        </div>
+        <div id="webhooksList"></div>
+      </section>
+
+      <!-- ==================== PAGE: AUDIT ==================== -->
+      <section class="page" id="page-audit">
+        <div class="pb-table-wrapper">
+          <div class="pb-table-header cols-audit"><span>Time</span><span>Actor</span><span>Action</span><span>Resource</span></div>
+          <div id="auditTable" class="pb-table-body"></div>
+        </div>
+      </section>
+
+      <!-- ==================== PAGE: DASHBOARD OVERVIEW ==================== -->
+      <section class="page active" id="page-dashboard">
+        <!-- KPIs Row -->
+        <div class="grid">
+          <div class="kpi-card">
+            <div class="kpi-icon"><i class="fas fa-users"></i></div>
+            <div class="kpi-info">
+              <div class="kpi-label">Active Profiles</div>
+              <div class="kpi-value" id="kpiProfiles">0</div>
+            </div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-icon" style="color: var(--red);"><i class="fas fa-fire-flame-curved"></i></div>
+            <div class="kpi-info">
+              <div class="kpi-label">Threats Detected</div>
+              <div class="kpi-value" id="kpiThreats">0</div>
+            </div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-icon" style="color: var(--orange);"><i class="fas fa-triangle-exclamation"></i></div>
+            <div class="kpi-info">
+              <div class="kpi-label">Critical Status</div>
+              <div class="kpi-value" id="kpiCritical">0</div>
+            </div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-icon" style="color: var(--green);"><i class="fas fa-circle-check"></i></div>
+            <div class="kpi-info">
+              <div class="kpi-label">Requests Analyzed</div>
+              <div class="kpi-value" id="kpiRequests">0</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Dashboard Charts Row -->
+        <div style="display: grid; grid-template-columns: 2fr 1.2fr; gap: 16px; margin-top: 16px;">
+          <div class="card">
+            <h4 class="theme-panel-title" style="margin-bottom: 12px; font-size: 11px;">Threat Timeline Activity</h4>
+            <div style="height: 250px;"><canvas id="timelineChart"></canvas></div>
+          </div>
+          <div class="card">
+            <h4 class="theme-panel-title" style="margin-bottom: 12px; font-size: 11px;">Anomalies Breakdown</h4>
+            <div style="height: 250px;"><canvas id="anomalyChart"></canvas></div>
+          </div>
+        </div>
+
+        <!-- Visitor Local Behavioral DNA Telemetry -->
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px;">
+          <!-- Local DNA -->
+          <div class="card">
+            <h4 class="theme-panel-title" style="margin-bottom: 12px; font-size: 11px;"><i class="fas fa-dna" style="color: var(--accent);"></i> Local Client DNA Telemetry</h4>
+            <div id="dnaDisplay">
+              <div class="empty-state" style="padding: 20px;">
+                <i class="fas fa-spinner fa-spin"></i>
+                <p>Computing client DNA fingerprint...</p>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Risk score & Recent activity -->
+          <div class="card">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+              <h4 class="theme-panel-title" style="margin: 0; font-size: 11px;"><i class="fas fa-shield-virus" style="color: var(--red);"></i> Visitor Risk Assessment</h4>
+              <span id="riskLevelBadge" class="badge">LOW</span>
+            </div>
             
-            <div class="stats-grid">
-                <div class="stat-card">
-                    <div class="stat-indicator">
-                        <span class="status-dot green"></span>
-                    </div>
-                    <div class="stat-info">
-                        <h3 id="totalProfiles">0</h3>
-                        <p>PROFILES</p>
-                    </div>
+            <div class="field-box" style="margin-bottom: 16px;">
+              <div class="field-label">Calculated Risk Score</div>
+              <div style="display: flex; align-items: center; gap: 10px;">
+                <div class="field-value mono" id="riskScoreVal" style="font-size: 18px; font-weight: 700; color: var(--accent);">0/100</div>
+                <div style="flex: 1; height: 8px; background: var(--surface-sub); border-radius: 4px; overflow: hidden; border: 1px solid var(--border);">
+                  <div id="riskFill" style="width: 0%; height: 100%; background: var(--green); transition: var(--transition);"></div>
                 </div>
-                <div class="stat-card">
-                    <div class="stat-indicator">
-                        <span class="status-dot yellow"></span>
-                    </div>
-                    <div class="stat-info">
-                        <h3 id="pendingThreats">0</h3>
-                        <p>PENDING</p>
-                    </div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-indicator">
-                        <span class="status-dot red"></span>
-                    </div>
-                    <div class="stat-info">
-                        <h3 id="criticalThreats">0</h3>
-                        <p>CRITICAL</p>
-                    </div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-indicator">
-                        <span class="status-dot green"></span>
-                    </div>
-                    <div class="stat-info">
-                        <h3 id="totalActivities">0</h3>
-                        <p>ACTIVITIES</p>
-                    </div>
-                </div>
+              </div>
             </div>
 
-            <div class="action-panel">
-                <h3>ACTIONS</h3>
-                <div class="button-group">
-                    <button class="btn" data-section="track">TRACK ACTIVITY</button>
-                    <button class="btn btn-outline" data-section="logs">VIEW LOGS</button>
-                </div>
+            <h4 class="theme-panel-title" style="margin-bottom: 8px; font-size: 10px;">Recent Security Alerts</h4>
+            <div id="recentThreats" style="display: flex; flex-direction: column; gap: 6px;">
+              <div class="empty-state" style="padding: 10px;">
+                <p>Telemetry stream active</p>
+              </div>
             </div>
-        </section>
+          </div>
+        </div>
+      </section>
 
-        <!-- Track Activity Section -->
-        <section id="track" class="section">
-            <h2>TRACK ACTIVITY</h2>
-            
-            <form id="trackForm" class="form">
-                <div class="form-group">
-                    <label>USER ID</label>
-                    <input type="text" id="userId" placeholder="user-123" required>
+      <!-- ==================== PAGE: PROFILES ==================== -->
+      <section class="page" id="page-profiles">
+        <!-- PocketBase-style query search / filter bar -->
+        <div class="filter-bar">
+          <i class="fas fa-filter"></i>
+          <input type="text" id="profileSearch" placeholder="Filter profiles by key, IP, threatLevel, e.g. filter = &quot;threatLevel == 'high'&quot;">
+        </div>
+
+        <div class="pb-table-wrapper">
+          <div class="pb-table-header cols-profiles">
+            <span>Profile ID / Key</span>
+            <span>Threat Level</span>
+            <span>Total Requests</span>
+            <span>Risk Score</span>
+            <span>Known IPs</span>
+            <span>Known Devices</span>
+          </div>
+          <div id="profilesGrid" class="pb-table-body">
+            <div class="empty-state">
+              <i class="fas fa-fingerprint"></i>
+              <p>Scanning profiles collection...</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ==================== PAGE: THREATS ==================== -->
+      <section class="page" id="page-threats">
+        <!-- PocketBase-style filter bar -->
+        <div class="filter-bar">
+          <i class="fas fa-search"></i>
+          <input type="text" id="threatSearch" placeholder="Filter threat events by anomalies, severity, riskScore...">
+        </div>
+
+        <div class="pb-table-wrapper">
+          <div class="pb-table-header cols-threats">
+            <span>Detected Time</span>
+            <span>Severity</span>
+            <span>Anomalies / Trigger</span>
+            <span>Risk Score</span>
+            <span>IP Address</span>
+          </div>
+          <div id="threatFeed" class="pb-table-body">
+            <div class="empty-state">
+              <i class="fas fa-circle-notch fa-spin"></i>
+              <p>Monitoring threat intelligence feed...</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ==================== PAGE: DATA SOURCES ==================== -->
+      <section class="page" id="page-sources">
+        <div style="display: grid; grid-template-columns: 280px 1fr; gap: 16px;">
+          <!-- Left Column: connected sources list & active jobs -->
+          <div>
+            <div class="card" style="padding: 16px;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                <h4 class="theme-panel-title" style="margin: 0; font-size: 11px;">Data Sources</h4>
+                <button class="btn-xs btn-primary" id="addSourceBtn"><i class="fas fa-plus"></i> Add</button>
+              </div>
+              <div id="sourcesList">
+                <div class="empty-state" style="padding: 20px;">
+                  <p>No databases connected</p>
                 </div>
-                
-                <div class="form-group">
-                    <label>ACCOUNT ID</label>
-                    <input type="text" id="accountId" placeholder="acc-456" required>
+              </div>
+            </div>
+
+            <div class="card" style="padding: 16px;">
+              <h4 class="theme-panel-title" style="margin-bottom: 12px; font-size: 11px;">Active Monitoring Jobs</h4>
+              <div id="jobsList">
+                <div class="empty-state" style="padding: 10px;">
+                  <p>No active scan jobs</p>
                 </div>
-                
-                <div class="form-group">
-                    <label>ACTIVITY TYPE</label>
-                    <select id="activityType" required>
-                        <option value="login">LOGIN</option>
-                        <option value="logout">LOGOUT</option>
-                        <option value="resource_access">RESOURCE ACCESS</option>
-                        <option value="api_call">API CALL</option>
-                        <option value="data_access">DATA ACCESS</option>
+              </div>
+            </div>
+          </div>
+
+          <!-- Right Column: dynamic content card -->
+          <div>
+            <!-- Form Card to Add Data Source -->
+            <div id="sourceFormCard" class="card" style="display: none;">
+              <h4 class="theme-panel-title" style="margin-bottom: 16px; font-size: 11px;"><i class="fas fa-plug" style="color: var(--primary);"></i> Connect Database Server</h4>
+              <form id="sourceForm">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                  <div class="form-group">
+                    <label>Unique ID</label>
+                    <input type="text" id="sf-id" placeholder="main-postgres" required>
+                  </div>
+                  <div class="form-group">
+                    <label>Display Label</label>
+                    <input type="text" id="sf-label" placeholder="Production PG DB">
+                  </div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1.5fr 1fr; gap: 12px;">
+                  <div class="form-group">
+                    <label>Database Type</label>
+                    <select id="sf-type" style="height: 38px;">
+                      <option value="postgres">PostgreSQL</option>
+                      <option value="mysql">MySQL</option>
+                      <option value="mongodb">MongoDB</option>
+                      <option value="redis">Redis</option>
                     </select>
+                  </div>
+                  <div class="form-group">
+                    <label>Connection Port</label>
+                    <input type="number" id="sf-port" placeholder="5432" required>
+                  </div>
                 </div>
-                
+
                 <div class="form-group">
-                    <label>IP ADDRESS</label>
-                    <input type="text" id="ipAddress" placeholder="192.168.1.1">
+                  <label>Host / IP Address</label>
+                  <input type="text" id="sf-host" placeholder="postgres or localhost" required>
+                  <small style="font-size:10px;color:var(--text-dim)">Docker: use host <code style="font-family:var(--mono)">postgres</code></small>
                 </div>
-                
+
                 <div class="form-group">
-                    <label>LOCATION</label>
-                    <input type="text" id="location" placeholder="New York, US">
+                  <label>Database Name</label>
+                  <input type="text" id="sf-database" placeholder="dna" required>
                 </div>
-                
-                <div class="form-group">
-                    <label>DEVICE</label>
-                    <input type="text" id="deviceInfo" placeholder="Desktop, Chrome">
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                  <div class="form-group">
+                    <label>Username</label>
+                    <input type="text" id="sf-username" placeholder="postgres">
+                  </div>
+                  <div class="form-group">
+                    <label>Password</label>
+                    <input type="password" id="sf-password" placeholder="••••••••">
+                  </div>
                 </div>
-                
-                <button type="submit" class="btn">TRACK</button>
+
+                <div class="form-group" style="flex-direction: row; align-items: center; gap: 10px; margin: 10px 0;">
+                  <input type="checkbox" id="sf-ssl" style="width: auto;">
+                  <label for="sf-ssl" style="margin: 0;">Require SSL/TLS Connection</label>
+                </div>
+
+                <div style="display: flex; gap: 10px; margin-top: 10px;">
+                  <button type="button" class="btn" id="testConnBtn" style="flex: 1;"><i class="fas fa-network-wired"></i> Test Connection</button>
+                  <button type="submit" class="btn-primary" style="flex: 1;"><i class="fas fa-link"></i> Connect Database</button>
+                </div>
+                <div id="connTestResult" style="margin-top: 10px; font-size: 11px; text-align: center;"></div>
+              </form>
+            </div>
+
+            <!-- Database Monitor / Scan Details Panel -->
+            <div id="scanResultsCard" class="card" style="display: none;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                <h4 id="scanResultsTitle" class="theme-panel-title" style="margin: 0; font-size: 11px;">Schema Tables</h4>
+                <button class="btn-sm btn-primary" id="startMonitorBtn"><i class="fas fa-play"></i> Start Auto-Monitoring</button>
+              </div>
+              <div id="scanSummary" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 16px;"></div>
+              <div id="scanTables"></div>
+            </div>
+
+            <!-- Placeholder -->
+            <div id="sourcePlaceholder" class="empty-state" style="padding: 80px 20px; border: 1px dashed var(--border); border-radius: var(--radius-md);">
+              <i class="fas fa-database fa-3x" style="opacity: 0.15;"></i>
+              <p style="margin-top: 12px; font-weight: 600;">Data Integration Hub</p>
+              <small style="color: var(--text-dim); font-size: 11px;">Select a data source on the left to inspect its schema or connect a new database instance.</small>
+            </div>
+
+            <!-- SQL Console Playground -->
+            <div class="card" style="margin-top: 16px;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                <h4 class="theme-panel-title" style="margin: 0; font-size: 11px;"><i class="fas fa-terminal" style="color: var(--primary);"></i> SQL/NoSQL Query Playground Console</h4>
+                <div style="display: flex; gap: 8px;">
+                  <button class="btn-xs btn" style="font-size: 10px; padding: 2px 8px;" onclick="setPlaygroundQuery('SELECT * FROM profiles')">Profiles</button>
+                  <button class="btn-xs btn" style="font-size: 10px; padding: 2px 8px;" onclick="setPlaygroundQuery('SELECT * FROM threats')">Threats</button>
+                  <button class="btn-xs btn" style="font-size: 10px; padding: 2px 8px;" onclick="setPlaygroundQuery('SELECT * FROM logs')">Logs</button>
+                </div>
+              </div>
+              <div style="display: flex; gap: 10px; margin-bottom: 12px;">
+                <input type="text" id="queryInput" placeholder="Type SQL query (e.g. SELECT * FROM profiles WHERE riskScore > 50)" style="font-family: var(--mono); font-size: 12px;" value="SELECT * FROM profiles">
+                <button class="btn-primary" id="runQueryBtn" style="white-space: nowrap;"><i class="fas fa-play"></i> Run Query</button>
+              </div>
+              <div id="queryResultContainer" style="max-height: 250px; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface);">
+                <div class="empty-state" style="padding: 20px;">
+                  <p>Execute SQL/NoSQL queries against the security database.</p>
+                </div>
+              </div>
+            </div>
+
+            <!-- Monitoring Activity logs -->
+            <div class="card" style="margin-top: 16px;">
+              <h4 class="theme-panel-title" style="margin-bottom: 12px; font-size: 11px;"><i class="fas fa-wave-square" style="color: var(--accent);"></i> Real-Time Database Event Streams</h4>
+              <div id="sourceActivityFeed" style="display: flex; flex-direction: column; gap: 6px; max-height: 250px; overflow-y: auto;">
+                <div class="empty-state" style="padding: 20px;">
+                  <p>Stream idle. Awaiting database transactions...</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ==================== PAGE: AI ENGINE ==================== -->
+      <section class="page" id="page-ai-settings">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+          <div class="card" style="padding:16px;">
+            <h4 class="theme-panel-title"><i class="fas fa-robot"></i> AI Provider Configuration</h4>
+            <p style="font-size:12px;color:var(--text-dim);margin:12px 0">Supports OpenAI, Claude, Gemini, Grok, Ollama, and custom OpenAI-compatible APIs.</p>
+            <form id="aiConfigForm">
+              <div class="form-group"><label>Profile name</label><input id="aic-name" placeholder="Production GPT-4o"></div>
+              <div class="form-group"><label>Provider</label>
+                <select id="aic-provider" style="height:38px"></select>
+              </div>
+              <div class="form-group"><label>API Key</label><input id="aic-key" type="password" placeholder="sk-... or leave blank for Ollama"></div>
+              <div class="form-group"><label>Base URL (optional)</label><input id="aic-base" placeholder="https://api.openai.com/v1"></div>
+              <div class="form-group"><label>Model</label><input id="aic-model" placeholder="gpt-4o-mini"></div>
+              <label style="display:flex;gap:8px;align-items:center;font-size:12px;margin:8px 0">
+                <input type="checkbox" id="aic-default"> Default provider
+              </label>
+              <label style="display:flex;gap:8px;align-items:center;font-size:12px">
+                <input type="checkbox" id="aic-enabled" checked> Enabled
+              </label>
+              <div style="display:flex;gap:8px;margin-top:14px">
+                <button type="submit" class="btn-primary">Save Provider</button>
+                <button type="button" class="btn-sm" id="aic-testBtn">Test Connection</button>
+              </div>
             </form>
-            
-            <div id="trackResult" class="result-box"></div>
-        </section>
+            <div id="aic-testResult" style="margin-top:12px;font-size:12px"></div>
+          </div>
+          <div class="card" style="padding:16px;">
+            <h4 class="theme-panel-title"><i class="fas fa-bolt"></i> Live Log Analysis</h4>
+            <label style="display:flex;gap:8px;align-items:center;font-size:12px;margin:10px 0">
+              <input type="checkbox" id="aic-liveLogs" checked> Auto-analyze suspicious logs with AI
+            </label>
+            <div class="form-group"><label>Slow request threshold (ms)</label><input type="number" id="aic-slowMs" value="2000"></div>
+            <p style="font-size:11px;color:var(--text-dim)">Triggers on 4xx/5xx, slow responses, and attack patterns in body.</p>
+            <h4 class="theme-panel-title" style="margin-top:20px">AI Playground</h4>
+            <textarea id="aic-playground" style="width:100%;height:80px;font-family:var(--mono);font-size:11px" placeholder="Ask the AI analyst anything..."></textarea>
+            <button class="btn-accent" id="aic-playBtn" style="margin-top:8px"><i class="fas fa-paper-plane"></i> Send</button>
+            <pre id="aic-playOut" style="margin-top:10px;font-size:11px;max-height:180px;overflow:auto;background:var(--surface-sub);padding:10px;border-radius:6px"></pre>
+          </div>
+        </div>
+        <div class="card" style="padding:16px;margin-top:16px">
+          <h4 class="theme-panel-title">Configured Providers</h4>
+          <div id="aiConfigsList"></div>
+        </div>
+      </section>
 
-        <!-- Request Logs Section -->
-        <section id="logs" class="section">
-            <h2>REQUEST LOGS</h2>
-            
-            <div class="logs-controls">
-                <button class="btn btn-outline" id="refreshLogsBtn">REFRESH</button>
-                <button class="btn btn-outline" id="clearLogsBtn">CLEAR</button>
-                <select id="logFilter">
-                    <option value="">ALL</option>
-                    <option value="GET">GET</option>
-                    <option value="POST">POST</option>
-                    <option value="PATCH">PATCH</option>
-                    <option value="DELETE">DELETE</option>
-                </select>
+      <!-- ==================== PAGE: REQUEST LOGS ==================== -->
+      <section class="page" id="page-logs">
+        <div class="card" style="padding: 12px 16px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+            <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+              <span class="badge" id="liveAiBadge"><i class="fas fa-circle" style="color:var(--green)"></i> Live AI</span>
+              <select id="logMethodFilter" style="width: 140px; height: 32px;">
+                <option value="">All Methods</option>
+                <option value="GET">GET</option>
+                <option value="POST">POST</option>
+                <option value="PUT">PUT</option>
+                <option value="DELETE">DELETE</option>
+              </select>
+              <select id="logAiFilter" style="width: 140px; height: 32px;">
+                <option value="">All logs</option>
+                <option value="aiOnly">AI analyzed</option>
+              </select>
+              <button class="btn-sm" id="refreshLogsBtn"><i class="fas fa-sync-alt"></i> Sync</button>
+              <button class="btn-sm btn-accent" id="analyzeBatchBtn"><i class="fas fa-robot"></i> AI Batch</button>
             </div>
-            
-            <div id="logsContainer" class="logs-container">
-                <p class="loading">LOADING...</p>
+            <button class="btn-sm btn-danger" id="clearLogsBtn"><i class="fas fa-trash-alt"></i> Purge</button>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1.4fr 1fr;gap:16px">
+          <div class="pb-table-wrapper">
+            <div class="pb-table-header cols-logs-ai">
+              <span>Method</span><span>Route</span><span>Status</span><span>AI Risk</span><span>Time</span>
             </div>
-        </section>
-    </main>
+            <div id="logsTable" class="pb-table-body"></div>
+          </div>
+          <div class="card" style="padding:16px;min-height:300px" id="logAiPanel">
+            <h4 class="theme-panel-title"><i class="fas fa-robot"></i> Live AI Insight</h4>
+            <div id="logAiContent" class="empty-state" style="padding:20px"><p>Select a log or wait for live analysis</p></div>
+          </div>
+        </div>
+      </section>
 
-    <script src="/app.js"></script>
+      <!-- ==================== PAGE: AI SANDBOX ==================== -->
+      <section class="page" id="page-analyze">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+          <!-- Request Payload inputs -->
+          <div class="card">
+            <h4 class="theme-panel-title" style="margin-bottom: 16px; font-size: 11px;"><i class="fas fa-microscope" style="color: var(--primary);"></i> Configure Sandbox Transaction</h4>
+            <form id="analyzeForm">
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                <div class="form-group">
+                  <label>Client ID / User ID</label>
+                  <input type="text" id="af-userId" placeholder="user_99" value="user_pocketbase">
+                </div>
+                <div class="form-group">
+                  <label>Account Reference ID</label>
+                  <input type="text" id="af-accountId" placeholder="acc_001" value="acc_graduation">
+                </div>
+              </div>
+
+              <div style="display: grid; grid-template-columns: 1fr 1.5fr; gap: 12px;">
+                <div class="form-group">
+                  <label>Action Event</label>
+                  <select id="af-activityType" style="height: 38px;">
+                    <option value="login">Account Sign-in</option>
+                    <option value="api_call">API endpoint query</option>
+                    <option value="transaction">Database Transaction</option>
+                    <option value="access">Access Vault/Auth</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label>Route Endpoint</label>
+                  <input type="text" id="af-endpoint" placeholder="/api/admin/collections" value="/api/admin/collections">
+                </div>
+              </div>
+
+              <div style="display: grid; grid-template-columns: 1fr 1.5fr; gap: 12px;">
+                <div class="form-group">
+                  <label>Network IP</label>
+                  <input type="text" id="af-ip" placeholder="192.168.1.100" value="102.43.20.91">
+                </div>
+                <div class="form-group">
+                  <label>Network Geolocation</label>
+                  <input type="text" id="af-location" placeholder="Cairo, Egypt" value="Cairo, Egypt">
+                </div>
+              </div>
+
+              <div style="display: grid; grid-template-columns: 1fr 1.5fr; gap: 12px;">
+                <div class="form-group">
+                  <label>Device Platform</label>
+                  <select id="af-device" style="height: 38px;">
+                    <option value="desktop">Desktop Workstation</option>
+                    <option value="tablet">Tablet Client</option>
+                    <option value="mobile">Mobile Smart-phone</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label>User Agent Header</label>
+                  <input type="text" id="af-ua" placeholder="Mozilla/5.0..." value="Mozilla/5.0 (X11; Linux x86_64)">
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label>JSON Request Body Payload</label>
+                <textarea id="af-body" style="height: 90px; font-family: var(--mono); font-size: 11px;">{
+  "isAdminAccess": true,
+  "overrideRules": true
+}</textarea>
+              </div>
+
+              <button type="submit" class="btn-accent" id="analyzeBtn" style="width: 100%; justify-content: center; height: 40px; margin-top: 10px;">
+                <i class="fas fa-brain"></i> Trigger AI Behavior Engine
+              </button>
+            </form>
+          </div>
+
+          <!-- Evaluation Results -->
+          <div class="card" style="display: flex; flex-direction: column;">
+            <h4 class="theme-panel-title" style="margin-bottom: 16px; font-size: 11px;"><i class="fas fa-square-poll-vertical" style="color: var(--accent);"></i> Real-time Telemetry Evaluation</h4>
+            
+            <div id="analyzeResult" style="flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center;">
+              <i class="fas fa-flask fa-3x" style="opacity: 0.15; margin-bottom: 16px;"></i>
+              <p style="font-weight: 600;">AI Engine Sandbox Ready</p>
+              <small style="color: var(--text-dim); max-width: 320px; font-size: 11px; margin-top: 6px;">Configure transaction details on the left, then click 'Trigger AI Behavior Engine' to execute anomalies extraction, risk indexing, and LLM text justification.</small>
+            </div>
+          </div>
+        </div>
+      </section>
+      <!-- ==================== PAGE: POLICIES ==================== -->
+      <section class="page" id="page-policies">
+        <!-- Search & Custom Policy Actions -->
+        <div style="display: flex; gap: 10px; margin-bottom: 16px; align-items: center;">
+          <div class="filter-bar" style="flex: 1; margin-bottom: 0;">
+            <i class="fas fa-filter"></i>
+            <input type="text" id="policySearch" placeholder="Filter active security policies by trigger, type, action...">
+          </div>
+          <button class="btn-primary" id="addPolicyBtn"><i class="fas fa-plus"></i> New Policy</button>
+        </div>
+
+        <div class="pb-table-wrapper">
+          <div class="pb-table-header" style="grid-template-columns: 2fr 1fr 1fr 1fr 1fr; display: grid; gap: 16px; padding: 10px 16px;">
+            <span>Rule Name / Purpose</span>
+            <span>Trigger Selector</span>
+            <span>Threshold</span>
+            <span>Assigned Action</span>
+            <span>Policy Status</span>
+          </div>
+          <div id="policiesGrid" class="pb-table-body">
+            <!-- Populated by JS -->
+            <div class="empty-state">
+              <i class="fas fa-user-shield"></i>
+              <p>Syncing system firewall policies...</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Team / User management (admin only) -->
+      <section class="page" id="page-users">
+        <div class="page-header">
+          <h3>Team Members</h3>
+          <p>Manage analyst and viewer accounts for this installation.</p>
+        </div>
+        <div style="display:flex;gap:10px;margin-bottom:16px;align-items:center">
+          <button class="btn-primary" id="addUserBtn"><i class="fas fa-user-plus"></i> Add User</button>
+        </div>
+        <div class="pb-table-wrapper">
+          <div class="pb-table-header" style="grid-template-columns:2fr 1fr 1fr 1fr 120px;display:grid;gap:16px;padding:10px 16px">
+            <span>Name / Email</span>
+            <span>Role</span>
+            <span>Status</span>
+            <span>Last login</span>
+            <span>Actions</span>
+          </div>
+          <div id="usersGrid" class="pb-table-body">
+            <div class="empty-state"><i class="fas fa-users"></i><p>Loading team...</p></div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <!-- User modal -->
+  <div class="pb-drawer-backdrop" id="userModalBackdrop" style="display:none"></div>
+  <div id="userModal" style="display:none;position:fixed;inset:0;z-index:2000;align-items:center;justify-content:center;padding:24px">
+    <div class="login-card" style="max-width:400px;width:100%;margin:auto;position:relative;z-index:2001">
+      <h3 id="userModalTitle" style="margin-bottom:16px;font-size:14px;text-transform:uppercase;letter-spacing:.08em">Add User</h3>
+      <form id="userForm">
+        <input type="hidden" id="uf-id">
+        <div class="form-group" style="margin-bottom:12px">
+          <label>Name</label>
+          <input type="text" id="uf-name" required>
+        </div>
+        <div class="form-group" style="margin-bottom:12px" id="uf-email-group">
+          <label>Email</label>
+          <input type="email" id="uf-email" required>
+        </div>
+        <div class="form-group" style="margin-bottom:12px">
+          <label>Role</label>
+          <select id="uf-role" style="width:100%;padding:8px;background:var(--bg2);border:1px solid var(--border);color:var(--text)">
+            <option value="analyst">Analyst</option>
+            <option value="viewer">Viewer</option>
+            <option value="admin">Admin</option>
+          </select>
+        </div>
+        <div class="form-group" style="margin-bottom:12px">
+          <label id="uf-password-label">Password</label>
+          <input type="password" id="uf-password" minlength="8" placeholder="Min. 8 characters">
+        </div>
+        <div class="form-group" style="margin-bottom:16px;display:none" id="uf-active-group">
+          <label><input type="checkbox" id="uf-active" checked> Active account</label>
+        </div>
+        <div style="display:flex;gap:8px;justify-content:flex-end">
+          <button type="button" class="btn-sm" id="userModalCancel">Cancel</button>
+          <button type="submit" class="btn-primary btn-sm">Save</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ==================== PREMIUM FEATURE: POCKETBASE SLIDE-OUT RECORD DRAWER ==================== -->
+  <div class="pb-drawer-backdrop" id="pbDrawerBackdrop"></div>
+  <div class="pb-drawer" id="pbDrawer">
+    <div class="pb-drawer-header">
+      <div class="pb-drawer-title" id="pbDrawerTitle">
+        <i class="fas fa-database"></i> Record details
+      </div>
+      <button class="pb-drawer-close" id="pbDrawerClose"><i class="fas fa-times"></i></button>
+    </div>
+    
+    <div class="pb-drawer-content" id="pbDrawerContent">
+      <!-- Dynamic populated -->
+    </div>
+    
+    <div class="pb-drawer-footer">
+      <button class="btn btn-sm" id="pbDrawerCancel">Cancel</button>
+      <button class="btn-sm btn-primary" id="pbDrawerSubmit">Save Changes</button>
+    </div>
+  </div>
+
+  <!-- Theme toggle -->
+  <div class="theme-customizer">
+    <button type="button" class="theme-dot" id="themeToggle" title="Toggle dark / light mode" aria-label="Toggle theme">
+      <i class="fas fa-sun" id="themeToggleIcon"></i>
+    </button>
+    <div class="theme-panel" id="themePanel">
+      <div class="theme-panel-section">
+        <div class="theme-panel-title">GhostTrace Theme</div>
+        <button type="button" class="btn-xs theme-pick-btn" data-theme-pick="dark" style="width:100%;margin-bottom:6px;text-align:left">
+          <i class="fas fa-moon"></i> Dark Mode
+        </button>
+        <button type="button" class="btn-xs theme-pick-btn" data-theme-pick="light" style="width:100%;text-align:left">
+          <i class="fas fa-sun"></i> Light Mode
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script src="api-client.js"></script>
+  <script src="app.js"></script>
+  <script src="soc-app.js"></script>
+  <script src="ai-console.js"></script>
 </body>
 </html>

@@ -1,225 +1,160 @@
+/**
+ * Threat Detection Routes — Enhanced API with AI explanations, profile management,
+ * and plugin administration.
+ */
+
 const express = require('express');
 const router = express.Router();
 const threatDetectionService = require('../services/threatDetectionService');
-const ThreatEvent = require('../models/ThreatEvent');
-const BehavioralProfile = require('../models/BehavioralProfile');
+const profileStore = require('../core/profileStore');
+const { pluginRegistry } = require('../core/pluginRegistry');
+const alertService = require('../services/alertService');
 
-// Analyze activity for threats
+// ─── Analyze ─────────────────────────────────────────────────────────────────
+
 router.post('/analyze', async (req, res, next) => {
   try {
     const {
-      accountId,
-      userId,
-      activityType,
-      timestamp,
-      ipAddress,
-      userAgent,
-      deviceInfo,
-      location,
-      endpoint,
-      resourceUsage,
-      metadata
+      accountId, userId, activityType, timestamp,
+      ipAddress, userAgent, deviceInfo, location,
+      endpoint, resourceUsage, body, query, metadata
     } = req.body;
-    
-    if (!accountId || !userId || !activityType) {
-      return res.status(400).json({
-        error: 'Missing required fields: accountId, userId, activityType'
-      });
+
+    if (!activityType) {
+      return res.status(400).json({ success: false, error: 'Missing required field: activityType' });
     }
-    
-    const activityData = {
-      accountId,
-      userId,
-      activityType,
-      timestamp: timestamp || new Date(),
-      ipAddress,
-      userAgent,
-      deviceInfo,
-      location,
-      endpoint,
-      resourceUsage,
-      metadata
-    };
-    
-    const analysis = await threatDetectionService.analyzeActivity(activityData);
-    
-    res.status(200).json({
-      success: true,
-      data: analysis
+
+    const analysis = await threatDetectionService.analyzeActivity({
+      accountId, userId, activityType,
+      timestamp: timestamp ? new Date(timestamp) : new Date(),
+      ipAddress, userAgent, deviceInfo, location,
+      endpoint, resourceUsage, body, query, metadata,
     });
-    
-  } catch (error) {
-    next(error);
-  }
+
+    res.json({ success: true, data: analysis });
+  } catch (err) { next(err); }
 });
 
-// Get threat events for a user
-router.get('/events/:userId', async (req, res, next) => {
+// ─── AI Explanation ───────────────────────────────────────────────────────────
+
+router.post('/explain', async (req, res, next) => {
   try {
-    const { userId } = req.params;
-    const filters = {
-      status: req.query.status,
-      severity: req.query.severity,
-      startDate: req.query.startDate,
-      endDate: req.query.endDate,
-      limit: parseInt(req.query.limit) || 50
-    };
-    
-    const threats = await threatDetectionService.getThreats(userId, filters);
-    
-    res.status(200).json({
-      success: true,
-      count: threats.length,
-      data: threats
-    });
-    
-  } catch (error) {
-    next(error);
-  }
+    const { key, activity, anomalies } = req.body;
+    if (!key && !activity) {
+      return res.status(400).json({ success: false, error: 'Provide key or activity' });
+    }
+    const profileKey = key || req.ip;
+    const explanation = await threatDetectionService.getExplanation(profileKey, activity, anomalies);
+    res.json({ success: true, data: explanation });
+  } catch (err) { next(err); }
 });
 
-// Get risk score for a user/account
-router.get('/risk/:userId', async (req, res, next) => {
+// ─── Risk ─────────────────────────────────────────────────────────────────────
+
+router.get('/risk', async (req, res, next) => {
   try {
-    const { userId } = req.params;
-    const { accountId } = req.query;
-    
-    if (!accountId) {
-      return res.status(400).json({
-        error: 'accountId query parameter is required'
-      });
-    }
-    
-    const riskData = await threatDetectionService.getRiskScore(userId, accountId);
-    
-    res.status(200).json({
-      success: true,
-      data: riskData
-    });
-    
-  } catch (error) {
-    next(error);
-  }
+    const key = req.query.key || req.query.userId || req.ip;
+    const risk = threatDetectionService.getRiskByKey(key);
+    res.json({ success: true, data: risk });
+  } catch (err) { next(err); }
 });
 
-// Get behavioral profile for a user/account
-router.get('/profile/:userId', async (req, res, next) => {
+// ─── Events / Threats ────────────────────────────────────────────────────────
+
+router.get('/events', async (req, res, next) => {
   try {
-    const { userId } = req.params;
-    const { accountId } = req.query;
-    
-    if (!accountId) {
-      return res.status(400).json({
-        error: 'accountId query parameter is required'
+    if (req.query.source === 'alerts' || !req.query.key) {
+      const { items, total } = await alertService.list({
+        ...req.query,
+        profileKey: req.query.key || req.query.profileKey,
       });
+      return res.json({ success: true, count: items.length, total, data: items });
     }
-    
-    const profile = await BehavioralProfile.findOne({ 
-      where: { userId, accountId } 
-    });
-    
-    if (!profile) {
-      return res.status(404).json({
-        success: false,
-        message: 'Behavioral profile not found'
-      });
-    }
-    
-    res.status(200).json({
-      success: true,
-      data: profile
-    });
-    
-  } catch (error) {
-    next(error);
-  }
+    const key = req.query.key || req.query.userId || req.ip;
+    const limit = parseInt(req.query.limit || '50', 10);
+    const events = threatDetectionService.getThreatsByKey(key, { limit });
+    res.json({ success: true, count: events.length, data: events });
+  } catch (err) { next(err); }
 });
 
-// Update threat event status
-router.patch('/events/:eventId', async (req, res, next) => {
+router.patch('/events/:id', async (req, res, next) => {
   try {
-    const { eventId } = req.params;
-    const { status, resolutionNotes } = req.body;
-    
-    if (!status) {
-      return res.status(400).json({
-        error: 'status is required'
-      });
-    }
-    
-    const event = await ThreatEvent.findByPk(eventId);
-    
-    if (!event) {
-      return res.status(404).json({
-        success: false,
-        message: 'Threat event not found'
-      });
-    }
-    
-    event.status = status;
-    event.resolutionNotes = resolutionNotes;
-    event.resolvedAt = new Date();
-    await event.save();
-    
-    res.status(200).json({
-      success: true,
-      data: event
+    const alert = await alertService.updateStatus(req.params.id, {
+      status: req.body.status || (req.body.falsePositive ? 'false_positive' : 'resolved'),
+      resolutionNotes: req.body.resolutionNotes || req.body.notes,
+      assignedTo: req.body.assignedTo,
+      actor: req.user?.username || 'analyst',
     });
-    
-  } catch (error) {
-    next(error);
-  }
+    if (!alert) return res.status(404).json({ success: false, error: 'Alert not found' });
+    res.json({ success: true, data: alert });
+  } catch (err) { next(err); }
 });
 
-// Get threat statistics
-router.get('/stats/:userId', async (req, res, next) => {
+// ─── Profile ─────────────────────────────────────────────────────────────────
+
+router.get('/profile', async (req, res, next) => {
   try {
-    const { userId } = req.params;
-    
-    const { Op } = require('sequelize');
-    
-    const totalThreats = await ThreatEvent.count({ where: { userId } });
-    const pendingThreats = await ThreatEvent.count({ where: { userId, status: 'pending' } });
-    const criticalThreats = await ThreatEvent.count({ 
-      where: { 
-        userId, 
-        severity: 'critical',
-        status: { [Op.ne]: 'resolved' }
-      }
-    });
-    
-    const severityBreakdown = await ThreatEvent.findAll({
-      where: { userId },
-      attributes: [
-        'severity',
-        [ThreatEvent.sequelize.fn('COUNT', ThreatEvent.sequelize.col('severity')), 'count']
-      ],
-      group: ['severity'],
-      raw: true
-    });
-    
-    const recentThreats = await ThreatEvent.findAll({
-      where: { userId },
-      order: [['detectedAt', 'DESC']],
-      limit: 10
-    });
-    
-    res.status(200).json({
-      success: true,
-      data: {
-        totalThreats,
-        pendingThreats,
-        criticalThreats,
-        severityBreakdown,
-        recentThreats
-      }
-    });
-    
-  } catch (error) {
-    next(error);
-  }
+    const key = req.query.key || req.query.userId || req.ip;
+    const profile = threatDetectionService.getProfileByKey(key);
+    if (!profile) return res.status(404).json({ success: false, error: 'Profile not found' });
+    res.json({ success: true, data: profile });
+  } catch (err) { next(err); }
+});
+
+router.get('/profiles', async (req, res, next) => {
+  try {
+    const profiles = profileStore.all().map(p => p.toJSON());
+    res.json({ success: true, count: profiles.length, data: profiles });
+  } catch (err) { next(err); }
+});
+
+// ─── Stats ────────────────────────────────────────────────────────────────────
+
+router.get('/stats', async (req, res, next) => {
+  try {
+    const stats = threatDetectionService.getAllStats();
+    res.json({ success: true, data: stats });
+  } catch (err) { next(err); }
+});
+
+// ─── Suspicious IP management ─────────────────────────────────────────────────
+
+router.post('/suspicious', async (req, res) => {
+  const key = req.body.key || req.body.ip || req.ip;
+  const level = req.body.level || 'high';
+  threatDetectionService.setSuspicious(key, level);
+  res.json({ success: true, key, level });
+});
+
+router.delete('/suspicious', async (req, res) => {
+  const key = req.body?.key || req.query.key || req.ip;
+  threatDetectionService.clearSuspicious(key);
+  res.json({ success: true, key });
+});
+
+// ─── Plugins ──────────────────────────────────────────────────────────────────
+
+router.get('/plugins', (req, res) => {
+  res.json({ success: true, data: pluginRegistry.list() });
+});
+
+// ─── Timeline feed (SSE) ──────────────────────────────────────────────────────
+
+router.get('/feed', (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.flushHeaders?.();
+
+  const sendStats = () => {
+    const stats = threatDetectionService.getAllStats();
+    res.write(`data: ${JSON.stringify(stats)}\n\n`);
+  };
+
+  sendStats();
+  const interval = setInterval(sendStats, 3000);
+  req.on('close', () => clearInterval(interval));
 });
 
 module.exports = router;
-
-

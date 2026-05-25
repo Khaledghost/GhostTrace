@@ -1,84 +1,254 @@
-const express = require('express');
-const cors = require('cors');
-const helmet = require('helmet');
-const rateLimit = require('express-rate-limit');
-const path = require('path');
-require('dotenv').config();
+/**
+ * BehavioralDNA — AI-Powered Security Layer
+ * ==========================================
+ * Drop-in security middleware for any Node.js/Express backend.
+ *
+ * Configuration via environment variables (see ENV_SETUP.md).
+ */
 
-const threatDetectionRoutes = require('./routes/threatDetection');
+require('dotenv').config();
+const express    = require('express');
+const cors       = require('cors');
+const helmet     = require('helmet');
+const rateLimit  = require('express-rate-limit');
+const path       = require('path');
+const cookieParser = require('cookie-parser');
+const { createProxyMiddleware } = require('http-proxy-middleware');
+
+const threatDetectionRoutes    = require('./routes/threatDetection');
 const behavioralTrackingRoutes = require('./routes/behavioralTracking');
-const loggerRoutes = require('./routes/logger');
-const { connectDB } = require('./config/database');
-const { errorHandler } = require('./middleware/errorHandler');
-const RequestLogger = require('./middleware/requestLogger');
+const loggerRoutes             = require('./routes/logger');
+const dataSourceRoutes         = require('./routes/datasources');
+const alertRoutes              = require('./routes/alerts');
+const incidentRoutes           = require('./routes/incidents');
+const huntRoutes               = require('./routes/hunt');
+const policyRoutes             = require('./routes/policies');
+const auditRoutes              = require('./routes/audit');
+const socRoutes                = require('./routes/soc');
+const integrationRoutes        = require('./routes/integrations');
+const aiRoutes                 = require('./routes/ai');
+const { errorHandler }         = require('./middleware/errorHandler');
+const RequestLogger            = require('./middleware/requestLogger');
+const createProtectionMiddleware = require('./middleware/protection');
+const authRoutes = require('./routes/auth');
+const { authenticate, redirectIfNeedsSetup } = require('./middleware/auth');
+
+const { connectDB, isDbReady } = require('./config/database');
 
 const app = express();
+const PORT = parseInt(process.env.PORT || '3001', 10);
+const HOST = process.env.HOST || '0.0.0.0';
+const TARGET_ORIGIN = process.env.TARGET_ORIGIN || '';
+const NODE_ENV = process.env.NODE_ENV || 'development';
 
-// Security middleware
+if (process.env.TRUST_PROXY === 'true') {
+  app.set('trust proxy', 1);
+}
+
+// ─── Security headers ────────────────────────────────────────────────────────
+
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
-      styleSrc: ["'self'", "'unsafe-inline'"],
-      imgSrc: ["'self'", "data:", "https:"],
-      connectSrc: ["'self'", "http://localhost:3001", "http://localhost:3000"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", 'https://cdn.jsdelivr.net', 'https://cdnjs.cloudflare.com'],
+      styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com', 'https://cdnjs.cloudflare.com', 'https://cdn.jsdelivr.net'],
+      fontSrc: ["'self'", 'data:', 'https://fonts.gstatic.com', 'https://cdnjs.cloudflare.com'],
+      imgSrc: ["'self'", 'data:', 'https:'],
+      connectSrc: ["'self'", process.env.PUBLIC_URL || `http://localhost:${PORT}`, 'ws://localhost:*', 'wss://*'],
     },
   },
+  crossOriginEmbedderPolicy: false,
 }));
 
-// CORS configuration
 app.use(cors({
-  origin: process.env.ALLOWED_ORIGINS || '*',
-  credentials: true
+  origin: (process.env.ALLOWED_ORIGINS || '*').split(','),
+  credentials: true,
 }));
 
-// Rate limiting
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100 // limit each IP to 100 requests per windowMs
-});
-app.use('/api/', limiter);
+// ─── API rate limiting ────────────────────────────────────────────────────────
 
-// Body parser middleware
+app.use('/api/', rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 500,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: 'Too many requests, please try again later.' },
+}));
+
+// ─── Body parsing ─────────────────────────────────────────────────────────────
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use(cookieParser());
 
-// Request logging middleware
+// ─── Request logging ──────────────────────────────────────────────────────────
+
 app.use(RequestLogger.middleware());
 
-// Serve static files
-app.use(express.static(path.join(__dirname, 'public')));
+// ─── Behavioral DNA Protection Layer ─────────────────────────────────────────
+// This is the core — sits in front of everything and analyzes every request.
 
-// Database connection
-connectDB();
+app.use(createProtectionMiddleware({
+  enableAnalysis:    true,
+  blockOnThreat:     process.env.BLOCK_ON_THREAT !== 'false',
+  riskBlockThreshold: parseInt(process.env.BLOCK_RISK_THRESHOLD || '70', 10),
+  rateLimitPerWindow: parseInt(process.env.RATE_LIMIT || '120', 10),
+  explainOnBlock:    true,
+  allowlist: [
+    '/health',
+    '/favicon.ico',
+    '/api/auth/login',
+    '/api/auth/setup',
+    '/api/auth/setup-status',
+    '/setup.html',
+    '/api/ai/status',
+    '/api/dna',
+    '/api/behavior/track',
+    '/login.html',
+    /^\/api\/(soc|alerts|incidents|hunt|policies|audit|threats|logger|sources|integrations|ai)\//,
+    '/api/logger/logs/live',
+    '/api/threats/feed',
+    '/api/soc/feed',
+    '/api/alerts/stream',
+    '/api/sources/events/stream',
+    /\.(css|js|html|png|jpeg|jpg|svg)$/,
+    '/assets/',
+  ],
+}));
 
-// Routes
-app.use('/api/threats', threatDetectionRoutes);
+// ─── API Routes ───────────────────────────────────────────────────────────────
+
+app.use('/api/auth', authRoutes);
+
+// Public API for behavior tracking
 app.use('/api/behavior', behavioralTrackingRoutes);
-app.use('/api/logger', loggerRoutes);
 
-// Health check endpoint
-app.get('/health', (req, res) => {
-  res.status(200).json({ 
-    status: 'OK', 
-    message: 'Threat Detection Service is running',
-    timestamp: new Date().toISOString()
-  });
+// Protected SOC / MDR APIs
+app.use('/api/soc', authenticate, socRoutes);
+app.use('/api/alerts', authenticate, alertRoutes);
+app.use('/api/incidents', authenticate, incidentRoutes);
+app.use('/api/hunt', authenticate, huntRoutes);
+app.use('/api/policies', authenticate, policyRoutes);
+app.use('/api/audit', authenticate, auditRoutes);
+app.use('/api/integrations', authenticate, integrationRoutes);
+app.use('/api/ai', authenticate, aiRoutes);
+app.use('/api/threats', authenticate, threatDetectionRoutes);
+app.use('/api/logger', authenticate, loggerRoutes);
+app.use('/api/sources', authenticate, dataSourceRoutes);
+
+// Static Dashboard (Order matters: public files first, then index protection)
+app.use(express.static(path.join(__dirname, 'public'), { index: false }));
+
+app.get('/setup.html', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'setup.html'));
 });
 
-app.get('/', (req, res) => {
+app.get('/', redirectIfNeedsSetup, authenticate, (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
+app.get('/login.html', redirectIfNeedsSetup, (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'login.html'));
+});
+
+// ─── Debug: inspect computed DNA ─────────────────────────────────────────────
+
+app.get('/api/dna', (req, res) => {
+  res.json({
+    success: true,
+    dna: req.clientDNA || null,
+    dnaObj: req.clientDNAObj || null,
+    analysis: req.protectionAnalysis || null,
+  });
+});
+
+// ─── Health check ─────────────────────────────────────────────────────────────
+
+app.get('/health', async (req, res) => {
+  const dbEnabled = process.env.DB_ENABLED !== 'false';
+  const dbStatus = dbEnabled ? (isDbReady() ? 'up' : 'down') : 'disabled';
+  const healthy = dbStatus !== 'down';
+  let aiStatus = { configured: false };
+  try {
+    aiStatus = await require('./services/aiService').getStatus();
+  } catch (_) { /* optional */ }
+
+  res.status(healthy ? 200 : 503).json({
+    status: healthy ? 'OK' : 'DEGRADED',
+    service: 'GhostTrace SOC Platform',
+    version: require('./package.json').version,
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    mode: NODE_ENV,
+    checks: { database: dbStatus },
+    ai: aiStatus,
+  });
+});
+
+// ─── Proxy to upstream backend ───────────────────────────────────────────────
+// All /backend/* requests are proxied (already protected by middleware above)
+
+if (TARGET_ORIGIN) {
+  app.use('/backend', createProxyMiddleware({
+    target: TARGET_ORIGIN,
+    changeOrigin: true,
+    pathRewrite: { '^/backend': '' },
+    on: {
+      error: (err, req, res) => {
+        res.status(502).json({ success: false, error: 'Upstream backend unavailable' });
+      },
+    },
+  }));
+}
+
+// ─── SPA fallback ─────────────────────────────────────────────────────────────
+
+app.get('*', (req, res, next) => {
+  if (req.path.startsWith('/api/')) return next();
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// ─── Error handler ────────────────────────────────────────────────────────────
+
 app.use(errorHandler);
 
-const PORT = process.env.PORT || 3001;
+// ─── Start ────────────────────────────────────────────────────────────────────
 
-app.listen(PORT, () => {
-  console.log(`Threat Detection Server running on port ${PORT}`);
+async function start() {
+  if (process.env.DB_ENABLED !== 'false') {
+    await connectDB();
+  }
+
+  const server = app.listen(PORT, HOST, () => {
+    console.log(`\n  👻 GhostTrace SOC Platform`);
+    console.log(`  ─────────────────────────────────────`);
+    console.log(`  🌐  Dashboard:   http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}`);
+    console.log(`  🔒  Mode:        ${NODE_ENV}`);
+    console.log(`  🗄️   Database:    ${process.env.DB_ENABLED === 'false' ? 'disabled' : isDbReady() ? 'connected' : 'unavailable'}`);
+    console.log(`  🤖  AI:          ${process.env.GEMINI_API_KEY ? 'Gemini' : process.env.OLLAMA_ENABLED === 'true' ? 'Ollama' : 'Rule-based fallback'}`);
+    if (TARGET_ORIGIN) {
+      console.log(`  ➡️   Proxying to: ${TARGET_ORIGIN}`);
+    }
+    console.log(`  ─────────────────────────────────────\n`);
+  });
+
+  const shutdown = (signal) => {
+    console.log(`\n${signal} received — shutting down gracefully`);
+    server.close(() => {
+      const { sequelize } = require('./config/database');
+      sequelize.close().finally(() => process.exit(0));
+    });
+    setTimeout(() => process.exit(1), 10000).unref();
+  };
+
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => shutdown('SIGINT'));
+}
+
+start().catch((err) => {
+  console.error('Failed to start server:', err);
+  process.exit(1);
 });
 
 module.exports = app;
-
-

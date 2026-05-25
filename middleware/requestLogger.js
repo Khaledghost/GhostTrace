@@ -1,75 +1,81 @@
-// In-memory request logger
+const EventEmitter = require('events');
+const logAiService = require('../services/logAiService');
+
+const logEmitter = new EventEmitter();
+logEmitter.setMaxListeners(50);
 
 class RequestLogger {
   static logs = [];
-  static maxLogs = 1000; // Keep last 1000 requests in memory
+  static maxLogs = parseInt(process.env.LOG_MAX_ENTRIES || '2000', 10);
+  static _idCounter = 1;
 
-  // Add request to in-memory log
   static async logRequest(req, res, responseData = null, startTime = Date.now()) {
     const logEntry = {
-      id: this.logs.length + 1,
-      timestamp: new Date(),
+      id: `log-${RequestLogger._idCounter++}`,
+      timestamp: new Date().toISOString(),
       method: req.method,
-      path: req.path,
-      ip: req.ip || req.connection.remoteAddress,
+      path: req.path || req.originalUrl?.split('?')[0],
+      ip: req.ip || req.headers['x-forwarded-for'] || req.connection?.remoteAddress,
       userAgent: req.get('user-agent'),
       statusCode: res.statusCode,
       responseTime: Date.now() - startTime,
-      requestBody: req.body ? JSON.stringify(req.body).substring(0, 200) : null,
-      responseSize: responseData ? JSON.stringify(responseData).length : null
+      requestBody: req.body ? JSON.stringify(req.body).substring(0, 500) : null,
+      responseSize: responseData ? JSON.stringify(responseData).length : null,
+      aiAnalysis: null,
+      aiStatus: 'pending',
     };
 
-    // Add to in-memory logs
-    this.logs.unshift(logEntry);
-    
-    // Keep only last maxLogs entries
-    if (this.logs.length > this.maxLogs) {
-      this.logs = this.logs.slice(0, this.maxLogs);
+    RequestLogger.logs.unshift(logEntry);
+    if (RequestLogger.logs.length > RequestLogger.maxLogs) {
+      RequestLogger.logs = RequestLogger.logs.slice(0, RequestLogger.maxLogs);
+    }
+
+    logEmitter.emit('log', logEntry);
+
+    if (logAiService.shouldAnalyze(logEntry)) {
+      logEntry.aiStatus = 'queued';
+      logAiService.enqueue(logEntry);
+    } else {
+      logEntry.aiStatus = 'skipped';
     }
 
     return logEntry;
   }
 
-  // Get recent logs
   static getLogs(limit = 50) {
-    return this.logs.slice(0, limit);
+    return RequestLogger.logs.slice(0, limit);
   }
 
-  // Clear logs
+  static getById(id) {
+    return RequestLogger.logs.find((l) => l.id === id) || null;
+  }
+
   static clearLogs() {
-    this.logs = [];
+    RequestLogger.logs = [];
   }
 
-  // Get logs by filter
   static getFilteredLogs(filter = {}) {
-    let filtered = [...this.logs];
-
-    if (filter.method) {
-      filtered = filtered.filter(log => log.method === filter.method);
-    }
-
-    if (filter.path) {
-      filtered = filtered.filter(log => log.path.includes(filter.path));
-    }
-
-    if (filter.statusCode) {
-      filtered = filtered.filter(log => log.statusCode === parseInt(filter.statusCode));
-    }
-
+    let filtered = [...RequestLogger.logs];
+    if (filter.method) filtered = filtered.filter((l) => l.method === filter.method);
+    if (filter.path) filtered = filtered.filter((l) => l.path?.includes(filter.path));
+    if (filter.statusCode) filtered = filtered.filter((l) => l.statusCode === parseInt(filter.statusCode, 10));
+    if (filter.aiOnly === 'true') filtered = filtered.filter((l) => l.aiAnalysis);
+    if (filter.risk) filtered = filtered.filter((l) => l.aiAnalysis?.riskLevel === filter.risk);
     return filtered;
   }
 
-  // Middleware function
+  static on(event, fn) { logEmitter.on(event, fn); }
+  static off(event, fn) { logEmitter.off(event, fn); }
+  static emit(event, data) { logEmitter.emit(event, data); }
+
   static middleware() {
     return async (req, res, next) => {
       const startTime = Date.now();
-      
-      // Capture original res.json and res.send
       const originalJson = res.json;
       const originalSend = res.send;
       let responseSent = false;
 
-      res.json = function(data) {
+      res.json = function (data) {
         if (!responseSent) {
           RequestLogger.logRequest(req, res, data, startTime);
           responseSent = true;
@@ -77,7 +83,7 @@ class RequestLogger {
         return originalJson.call(this, data);
       };
 
-      res.send = function(data) {
+      res.send = function (data) {
         if (!responseSent) {
           RequestLogger.logRequest(req, res, data, startTime);
           responseSent = true;
@@ -90,5 +96,13 @@ class RequestLogger {
   }
 }
 
-module.exports = RequestLogger;
+logAiService.on('analyzed', ({ logId, analysis }) => {
+  const log = RequestLogger.logs.find((l) => l.id === logId);
+  if (log) {
+    log.aiAnalysis = analysis;
+    log.aiStatus = 'complete';
+    logEmitter.emit('ai-analyzed', { logId, analysis, log });
+  }
+});
 
+module.exports = RequestLogger;

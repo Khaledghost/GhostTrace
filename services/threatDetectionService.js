@@ -1,401 +1,183 @@
-const { Op } = require('sequelize');
-const BehavioralProfile = require('../models/BehavioralProfile');
-const ThreatEvent = require('../models/ThreatEvent');
-const AccountActivity = require('../models/AccountActivity');
+/**
+ * ThreatDetectionService — Orchestrates profile management, anomaly detection,
+ * AI explanation, and risk scoring.
+ *
+ * This service is the single entry-point for all threat analysis.
+ * It is backend-agnostic and works with any framework via the protection middleware.
+ */
+
+const profileStore    = require('../core/profileStore');
+const AnomalyEngine   = require('../core/anomalyEngine');
+const { explainThreat } = require('../core/aiExplainer');
+const { pluginRegistry } = require('../core/pluginRegistry');
+const alertService    = require('./alertService');
+
+const BLOCK_RISK_THRESHOLD = parseInt(process.env.BLOCK_RISK_THRESHOLD || '70', 10);
 
 class ThreatDetectionService {
-  
-  async analyzeActivity(activityData) {
-    try {
-      const { accountId, userId } = activityData;
-      
-      // Get or create behavioral profile
-      let profile = await BehavioralProfile.findOne({ 
-        where: { accountId, userId } 
+  constructor() {
+    this._engine = new AnomalyEngine(pluginRegistry.getDetectors());
+    // Keep engine's plugin list in sync when new plugins are registered
+    pluginRegistry.on('register', () => {
+      this._engine = new AnomalyEngine(pluginRegistry.getDetectors());
+    });
+  }
+
+  /**
+   * Full threat analysis pipeline:
+   *   1. Resolve profile
+   *   2. Run anomaly engine
+   *   3. Apply risk scoring with decay
+   *   4. Generate AI explanation for threats
+   *   5. Update global stats
+   *   6. Return analysis result
+   *
+   * @param {object} activity
+   * @returns {Promise<AnalysisResult>}
+   */
+  async analyzeActivity(activity) {
+    const key = this._resolveKey(activity);
+    const profile = profileStore.getOrCreate(key);
+
+    // Run detection BEFORE observing (so new signals aren't learned yet)
+    const { anomalies, riskDelta } = this._engine.analyze(activity, profile);
+
+    // Update profile with this activity
+    profile.observe(activity);
+
+    // Apply risk scoring
+    this._engine.applyRisk(profile, riskDelta);
+
+    // Global stats
+    profileStore.globalStats.totalRequests++;
+
+    const isThreat = anomalies.length > 0 || profile.riskScore >= 30;
+    let explanation = null;
+
+    if (isThreat && anomalies.length > 0) {
+      profileStore.globalStats.totalThreats++;
+      profileStore.recordGlobalThreat({
+        type: anomalies[0]?.type,
+        severity: anomalies[0]?.severity,
+        ip: activity.ipAddress || key,
+        key,
       });
-      
-      if (!profile) {
-        profile = await this.initializeProfile(accountId, userId);
-      }
-      
-      // Analyze current activity against profile
-      const anomalies = await this.detectAnomalies(activityData, profile);
-      
-      // Update behavioral profile
-      await this.updateProfile(profile, activityData);
-      
-      // Create threat events if anomalies detected
-      if (anomalies.length > 0) {
-        await this.createThreatEvents(accountId, userId, anomalies);
-        return {
-          isThreat: true,
-          anomalies,
-          riskScore: profile.riskScore,
-          threatLevel: profile.threatLevel
-        };
-      }
-      
-      return {
-        isThreat: false,
+      profile.recordThreat({
+        anomalies: anomalies.map(a => a.type),
         riskScore: profile.riskScore,
-        threatLevel: profile.threatLevel
-      };
-      
-    } catch (error) {
-      console.error('Error analyzing activity:', error);
-      throw error;
-    }
-  }
-  
-  async initializeProfile(accountId, userId) {
-    const profile = await BehavioralProfile.create({
-      accountId,
-      userId,
-      loginPattern: {
-        averageLoginTime: [],
-        loginFrequency: 0,
-        lastLoginTimes: [],
-        typicalLoginHours: []
-      },
-      accessPattern: {
-        endpoints: [],
-        commonResources: [],
-        averageSessionDuration: 0
-      },
-      resourceUsage: {
-        cpuUsage: [],
-        memoryUsage: [],
-        networkActivity: [],
-        typicalRequestSize: 0
-      },
-      geographicPattern: {
-        locations: [],
-        primaryLocation: '',
-        allowedRegions: []
-      },
-      devicePattern: {
-        devices: [],
-        primaryDevice: ''
-      },
-      behaviorSignature: '',
-      riskScore: 0,
-      threatLevel: 'low'
-    });
-    
-    return profile;
-  }
-  
-  async detectAnomalies(activityData, profile) {
-    const anomalies = [];
-    const threshold = 0.7; // 70% deviation threshold
-    
-    // Check location anomaly
-    if (activityData.location) {
-      const isLocationAnomalous = this.checkLocationAnomaly(activityData.location, profile);
-      if (isLocationAnomalous) {
-        anomalies.push({
-          type: 'unusual_location',
-          severity: 'medium',
-          description: `Login from unusual location: ${activityData.location.city}, ${activityData.location.country}`,
-          metadata: {
-            ...activityData,
-            anomalyScore: 0.75
-          }
-        });
-      }
-    }
-    
-    // Check device anomaly
-    if (activityData.deviceInfo) {
-      const isDeviceAnomalous = this.checkDeviceAnomaly(activityData.deviceInfo, profile);
-      if (isDeviceAnomalous) {
-        anomalies.push({
-          type: 'device_mismatch',
-          severity: 'high',
-          description: `Access from unrecognized device: ${activityData.deviceInfo.deviceType}`,
-          metadata: {
-            ...activityData,
-            anomalyScore: 0.85
-          }
-        });
-      }
-    }
-    
-    // Check time-based anomaly
-    const isTimeAnomalous = this.checkTimeAnomaly(activityData.timestamp, profile);
-    if (isTimeAnomalous) {
-      anomalies.push({
-        type: 'suspicious_login',
-        severity: 'low',
-        description: `Login at unusual time: ${activityData.timestamp}`,
-        metadata: {
-          ...activityData,
-          anomalyScore: 0.65
-        }
+        timestamp: new Date().toISOString(),
       });
-    }
-    
-    // Check access pattern anomaly
-    if (activityData.endpoint) {
-      const isAccessAnomalous = this.checkAccessPatternAnomaly(activityData.endpoint, profile);
-      if (isAccessAnomalous) {
-        anomalies.push({
-          type: 'access_anomaly',
-          severity: 'medium',
-          description: `Access to unusual endpoint: ${activityData.endpoint}`,
-          metadata: {
-            ...activityData,
-            anomalyScore: 0.70
-          }
+
+      explainThreat({ anomalies, riskScore: profile.riskScore, threatLevel: profile.threatLevel, profile, activity })
+        .then(async (exp) => {
+          profile._lastExplanation = exp;
+          await alertService.createFromDetection({
+            activity: { ...activity, ipAddress: activity.ipAddress || key },
+            anomalies,
+            riskScore: profile.riskScore,
+            profileKey: key,
+            explanation: typeof exp === 'string' ? exp : exp?.summary || JSON.stringify(exp),
+          });
+        })
+        .catch(async () => {
+          await alertService.createFromDetection({
+            activity: { ...activity, ipAddress: activity.ipAddress || key },
+            anomalies,
+            riskScore: profile.riskScore,
+            profileKey: key,
+          });
         });
-      }
     }
-    
-    // Check resource usage anomaly
-    if (activityData.resourceUsage) {
-      const isResourceAnomalous = this.checkResourceAnomaly(activityData.resourceUsage, profile);
-      if (isResourceAnomalous) {
-        anomalies.push({
-          type: 'resource_abuse',
-          severity: 'high',
-          description: 'Unusual resource consumption detected',
-          metadata: {
-            ...activityData,
-            anomalyScore: 0.80
-          }
-        });
-      }
-    }
-    
-    // Calculate overall behavioral deviation
-    if (anomalies.length > 2) {
-      anomalies.push({
-        type: 'behavior_anomaly',
-        severity: 'critical',
-        description: 'Multiple behavioral anomalies detected',
-        metadata: {
-          ...activityData,
-          behavioralDeviation: 0.90,
-          anomalyScore: 0.90
-        }
-      });
-    }
-    
-    return anomalies;
+
+    await pluginRegistry.emit('afterAnalyze', { activity, anomalies, profile, isThreat });
+
+    return {
+      isThreat,
+      anomalies,
+      riskScore: profile.riskScore,
+      threatLevel: profile.threatLevel,
+      profileKey: key,
+      requestCount: profile.requestCount,
+      explanation: profile._lastExplanation || null,
+    };
   }
-  
-  checkLocationAnomaly(location, profile) {
-    if (!profile.geographicPattern.locations || profile.geographicPattern.locations.length === 0) {
-      return false;
-    }
-    
-    const knownLocations = profile.geographicPattern.locations.map(loc => 
-      `${loc.country}-${loc.city}`
-    );
-    const currentLocation = `${location.country}-${location.city}`;
-    
-    return !knownLocations.includes(currentLocation);
-  }
-  
-  checkDeviceAnomaly(deviceInfo, profile) {
-    if (!profile.devicePattern.devices || profile.devicePattern.devices.length === 0) {
-      return false;
-    }
-    
-    const knownDevices = profile.devicePattern.devices.map(dev => dev.deviceId);
-    return !knownDevices.includes(deviceInfo.deviceId);
-  }
-  
-  checkTimeAnomaly(timestamp, profile) {
-    if (!profile.loginPattern.typicalLoginHours || profile.loginPattern.typicalLoginHours.length === 0) {
-      return false;
-    }
-    
-    const hour = new Date(timestamp).getHours();
-    return !profile.loginPattern.typicalLoginHours.includes(hour);
-  }
-  
-  checkAccessPatternAnomaly(endpoint, profile) {
-    if (!profile.accessPattern.endpoints || profile.accessPattern.endpoints.length === 0) {
-      return false;
-    }
-    
-    const knownEndpoints = profile.accessPattern.endpoints.map(ep => ep.path);
-    return !knownEndpoints.includes(endpoint);
-  }
-  
-  checkResourceAnomaly(resourceUsage, profile) {
-    if (!profile.resourceUsage.cpuUsage || profile.resourceUsage.cpuUsage.length === 0) {
-      return false;
-    }
-    
-    const avgCpu = profile.resourceUsage.cpuUsage.reduce((a, b) => a + b, 0) / profile.resourceUsage.cpuUsage.length;
-    const currentCpu = resourceUsage.cpu || 0;
-    
-    return Math.abs(currentCpu - avgCpu) > avgCpu * 0.5; // 50% deviation
-  }
-  
-  async updateProfile(profile, activityData) {
-    const now = new Date();
-    
-    // Update login pattern
-    if (activityData.activityType === 'login') {
-      profile.loginPattern.loginFrequency += 1;
-      profile.loginPattern.lastLoginTimes.push(now);
-      
-      const hour = now.getHours();
-      if (!profile.loginPattern.typicalLoginHours.includes(hour)) {
-        profile.loginPattern.typicalLoginHours.push(hour);
-      }
-      
-      if (profile.loginPattern.lastLoginTimes.length > 10) {
-        profile.loginPattern.lastLoginTimes.shift();
-      }
-    }
-    
-    // Update access pattern
-    if (activityData.endpoint) {
-      const existingEndpoint = profile.accessPattern.endpoints.find(
-        ep => ep.path === activityData.endpoint
-      );
-      
-      if (existingEndpoint) {
-        existingEndpoint.frequency += 1;
-        existingEndpoint.lastAccessed = now;
-      } else {
-        profile.accessPattern.endpoints.push({
-          path: activityData.endpoint,
-          frequency: 1,
-          lastAccessed: now
-        });
-      }
-    }
-    
-    // Update geographic pattern
-    if (activityData.location) {
-      const existingLocation = profile.geographicPattern.locations.find(
-        loc => loc.country === activityData.location.country && 
-               loc.city === activityData.location.city
-      );
-      
-      if (existingLocation) {
-        existingLocation.frequency += 1;
-      } else {
-        profile.geographicPattern.locations.push({
-          ip: activityData.ipAddress,
-          country: activityData.location.country,
-          city: activityData.location.city,
-          coordinates: activityData.location.coordinates,
-          frequency: 1
-        });
-      }
-    }
-    
-    // Update device pattern
-    if (activityData.deviceInfo) {
-      const existingDevice = profile.devicePattern.devices.find(
-        dev => dev.deviceId === activityData.deviceInfo.deviceId
-      );
-      
-      if (existingDevice) {
-        existingDevice.frequency += 1;
-        existingDevice.lastUsed = now;
-      } else {
-        profile.devicePattern.devices.push({
-          deviceId: activityData.deviceInfo.deviceId,
-          deviceType: activityData.deviceInfo.deviceType,
-          userAgent: activityData.userAgent,
-          frequency: 1,
-          lastUsed: now
-        });
-      }
-      
-      // Set primary device if not set
-      if (!profile.devicePattern.primaryDevice) {
-        profile.devicePattern.primaryDevice = activityData.deviceInfo.deviceId;
-      }
-    }
-    
-    // Update resource usage
-    if (activityData.resourceUsage) {
-      if (profile.resourceUsage.cpuUsage.length < 50) {
-        profile.resourceUsage.cpuUsage.push(activityData.resourceUsage.cpu || 0);
-      }
-      if (profile.resourceUsage.memoryUsage.length < 50) {
-        profile.resourceUsage.memoryUsage.push(activityData.resourceUsage.memory || 0);
-      }
-    }
-    
-    // Update risk score and signature
-    profile.updateRiskScore();
-    profile.generateSignature();
-    
-    await profile.save();
-  }
-  
-  async createThreatEvents(accountId, userId, anomalies) {
-    const threatEvents = anomalies.map(anomaly => ({
-      accountId,
-      userId,
-      eventType: anomaly.type,
-      severity: anomaly.severity,
-      description: anomaly.description,
-      detectedAt: new Date(),
-      metadata: anomaly.metadata,
-      status: 'pending'
-    }));
-    
-    await ThreatEvent.bulkCreate(threatEvents);
-  }
-  
-  async getThreats(userId, filters = {}) {
-    const where = { userId };
-    
-    if (filters.status) {
-      where.status = filters.status;
-    }
-    
-    if (filters.severity) {
-      where.severity = filters.severity;
-    }
-    
-    if (filters.startDate || filters.endDate) {
-      where.detectedAt = {};
-      if (filters.startDate) where.detectedAt[Op.gte] = new Date(filters.startDate);
-      if (filters.endDate) where.detectedAt[Op.lte] = new Date(filters.endDate);
-    }
-    
-    const threats = await ThreatEvent.findAll({
-      where,
-      order: [['detectedAt', 'DESC']],
-      limit: filters.limit || 50
+
+  /**
+   * Get AI explanation synchronously (awaits explainThreat).
+   */
+  async getExplanation(key, activity, anomalies) {
+    const profile = profileStore.get(key);
+    return explainThreat({
+      anomalies: anomalies || [],
+      riskScore: profile?.riskScore || 0,
+      threatLevel: profile?.threatLevel || 'low',
+      profile,
+      activity,
     });
-    
-    return threats;
   }
-  
-  async getRiskScore(userId, accountId) {
-    const profile = await BehavioralProfile.findOne({ 
-      where: { userId, accountId } 
-    });
-    
-    if (!profile) {
-      return {
-        riskScore: 0,
-        threatLevel: 'low',
-        profileExists: false
-      };
-    }
-    
+
+  getRiskByKey(key) {
+    const profile = profileStore.get(key);
+    if (!profile) return { riskScore: 0, threatLevel: 'low', profileExists: false };
     return {
       riskScore: profile.riskScore,
       threatLevel: profile.threatLevel,
+      requestCount: profile.requestCount,
       profileExists: true,
-      lastUpdated: profile.updatedAt
     };
+  }
+
+  getThreatsByKey(key, { limit = 50 } = {}) {
+    const profile = profileStore.get(key);
+    if (!profile) return [];
+    return profile.threatHistory.slice(-limit).reverse();
+  }
+
+  getProfileByKey(key) {
+    const profile = profileStore.get(key);
+    return profile ? profile.toJSON() : null;
+  }
+
+  setSuspicious(key, level = 'high') {
+    const profile = profileStore.getOrCreate(key);
+    profile.riskScore = Math.max(profile.riskScore, this._levelToRisk(level));
+    profile.threatLevel = this._engine._riskToLevel(profile.riskScore);
+    profile.flaggedSuspicious = true;
+  }
+
+  clearSuspicious(key) {
+    const profile = profileStore.get(key);
+    if (profile) {
+      profile.flaggedSuspicious = false;
+      profile.riskScore = Math.max(0, profile.riskScore - 30);
+      profile.threatLevel = this._engine._riskToLevel(profile.riskScore);
+    }
+  }
+
+  getAllStats() {
+    return profileStore.summaryJSON();
+  }
+
+  getPlugins() {
+    return pluginRegistry.list();
+  }
+
+  // ─── Helpers ─────────────────────────────────────────────────────────────
+
+  _resolveKey(activity) {
+    // Priority: explicit identity → DNA fingerprint → IP
+    if (activity.userId && activity.accountId) {
+      return `${activity.accountId}::${activity.userId}`;
+    }
+    if (activity.deviceInfo?.fingerprint) return activity.deviceInfo.fingerprint;
+    if (activity.deviceInfo?.behaviorSignature) return activity.deviceInfo.behaviorSignature;
+    return activity.ipAddress || 'unknown';
+  }
+
+  _levelToRisk(level) {
+    const map = { critical: 85, high: 70, medium: 40, low: 20 };
+    return map[level] || 20;
   }
 }
 
 module.exports = new ThreatDetectionService();
-
-

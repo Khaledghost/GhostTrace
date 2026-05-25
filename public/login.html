@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sign In | GhostTrace SOFTWARE</title>
+  <link rel="icon" href="/assets/logo-dark.png" type="image/png">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="ghosttrace.css">
+  <style>
+    body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      background: var(--bg);
+      padding: 24px;
+      overflow: auto;
+    }
+    .login-container { width: 100%; max-width: 400px; }
+    .login-brand {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      margin-bottom: 32px;
+      text-align: center;
+    }
+    .login-brand img { height: 72px; width: auto; margin-bottom: 16px; }
+    .login-card {
+      padding: 32px 28px;
+      border: 1px solid var(--border);
+      background: var(--bg);
+      border-radius: var(--radius-md);
+    }
+    .login-header h1 {
+      font-size: 14px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    .login-header p {
+      font-size: 10px;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      margin-top: 6px;
+    }
+    .error-msg {
+      border: 1px solid var(--border);
+      padding: 10px;
+      font-size: 12px;
+      margin-bottom: 16px;
+      display: none;
+      text-align: center;
+    }
+    .theme-switch-login {
+      position: fixed;
+      top: 16px;
+      right: 16px;
+    }
+  </style>
+</head>
+<body>
+
+  <button class="btn-sm theme-switch-login" type="button" id="themeBtn" title="Toggle theme">
+    <i class="fas fa-adjust"></i>
+  </button>
+
+  <div class="login-container">
+    <div class="login-brand">
+      <img src="/assets/logo-light.png" alt="GhostTrace" class="brand-logo brand-logo--black">
+      <img src="/assets/logo-dark.png" alt="GhostTrace" class="brand-logo brand-logo--white">
+      <div class="brand-wordmark" style="align-items:center">
+        <span class="brand-name" style="font-size:22px">GhostTrace</span>
+        <span class="brand-sub">SOFTWARE</span>
+      </div>
+    </div>
+
+    <div class="login-card">
+      <div class="login-header" style="text-align:center;margin-bottom:24px">
+        <h1>Sign In</h1>
+        <p>SOC · MDR Console</p>
+      </div>
+      <div id="errorBox" class="error-msg"></div>
+      <form id="loginForm">
+        <div class="form-group" style="margin-bottom:16px">
+          <label>Email</label>
+          <input type="email" id="email" required placeholder="you@company.local" autofocus>
+        </div>
+        <div class="form-group" style="margin-bottom:24px">
+          <label>Password</label>
+          <input type="password" id="password" required placeholder="••••••••">
+        </div>
+        <button type="submit" class="btn-primary" style="width:100%;justify-content:center;height:42px">
+          Sign In <i class="fas fa-arrow-right" style="font-size:11px"></i>
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    const html = document.documentElement;
+    const saved = localStorage.getItem('theme_preset') || 'dark';
+    html.setAttribute('data-theme', saved);
+
+    function applyLoginTheme(theme) {
+      html.setAttribute('data-theme', theme);
+      localStorage.setItem('theme_preset', theme);
+    }
+    document.getElementById('themeBtn').onclick = () => {
+      applyLoginTheme(html.getAttribute('data-theme') === 'light' ? 'dark' : 'light');
+    };
+
+    (async () => {
+      try {
+        const res = await fetch('/api/auth/setup-status');
+        const data = await res.json();
+        if (data.needsSetup) window.location.href = '/setup.html';
+      } catch (_) { /* continue to login */ }
+    })();
+
+    document.getElementById('loginForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const errorBox = document.getElementById('errorBox');
+      errorBox.style.display = 'none';
+      try {
+        const res = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: document.getElementById('email').value,
+            password: document.getElementById('password').value,
+          }),
+        });
+        const data = await res.json();
+        if (data.needsSetup) {
+          window.location.href = '/setup.html';
+          return;
+        }
+        if (data.success) window.location.href = '/';
+        else {
+          errorBox.textContent = data.error || 'Login failed';
+          errorBox.style.display = 'block';
+        }
+      } catch {
+        errorBox.textContent = 'Connection error';
+        errorBox.style.display = 'block';
+      }
+    });
+  </script>
+</body>
+</html>
