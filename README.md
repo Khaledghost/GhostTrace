@@ -1,4 +1,4 @@
-![GhostTrace Logo](public/assets/logo-dark.png)
+![GhostTrace Logo](public/assets/logo-light.png)
 ![GhostTrace main](docs/images/logo.png)
 
 # GhostTrace
