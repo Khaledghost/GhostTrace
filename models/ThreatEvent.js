@@ -1,5 +1,6 @@
 const { DataTypes } = require('sequelize');
 const { sequelize } = require('../config/database');
+const { jsonType, enumType } = require('./dbTypes');
 
 const ThreatEvent = sequelize.define('ThreatEvent', {
   id: {
@@ -18,18 +19,18 @@ const ThreatEvent = sequelize.define('ThreatEvent', {
     index: true
   },
   eventType: {
-    type: DataTypes.ENUM(
+    type: enumType([
       'suspicious_login',
       'unusual_location',
       'device_mismatch',
       'behavior_anomaly',
       'resource_abuse',
-      'access_anomaly'
-    ),
+      'access_anomaly',
+    ]),
     allowNull: false
   },
   severity: {
-    type: DataTypes.ENUM('low', 'medium', 'high', 'critical'),
+    type: enumType(['low', 'medium', 'high', 'critical']),
     allowNull: false
   },
   description: {
@@ -42,11 +43,11 @@ const ThreatEvent = sequelize.define('ThreatEvent', {
     index: true
   },
   metadata: {
-    type: DataTypes.JSONB,
+    type: jsonType(),
     defaultValue: {}
   },
   status: {
-    type: DataTypes.ENUM('pending', 'investigating', 'resolved', 'false_positive'),
+    type: enumType(['pending', 'investigating', 'resolved', 'false_positive']),
     defaultValue: 'pending',
     index: true
   },

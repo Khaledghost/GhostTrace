@@ -1110,3 +1110,150 @@ input::placeholder, textarea::placeholder {
   background: var(--surface);
 }
 
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Route Monitor Styles
+   ═══════════════════════════════════════════════════════════════════════ */
+
+.tab-btn {
+  padding: 0.75rem 1.25rem;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.95rem;
+  transition: all 0.2s;
+  font-weight: 500;
+}
+
+.tab-btn:hover {
+  color: var(--text);
+  background: var(--bg-sub);
+}
+
+.tab-btn.active {
+  color: var(--primary);
+  border-bottom-color: var(--primary);
+}
+
+.tab-content {
+  display: none;
+}
+
+.tab-content.active {
+  display: block;
+}
+
+.stat-card {
+  background: var(--surface);
+  padding: 1.25rem;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+}
+
+.stat-value {
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--primary);
+  margin-bottom: 0.5rem;
+}
+
+.stat-label {
+  color: var(--text-muted);
+  font-size: 0.875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.table-container {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.data-table th {
+  background: var(--bg-sub);
+  padding: 0.875rem;
+  text-align: left;
+  font-weight: 600;
+  font-size: 0.875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-muted);
+}
+
+.data-table td {
+  padding: 0.875rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.data-table tbody tr:hover {
+  background: var(--bg-sub);
+}
+
+.data-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* Badge variants */
+.badge-success {
+  background: var(--green);
+  color: white;
+  padding: 0.25rem 0.5rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  font-weight: 600;
+  display: inline-block;
+}
+
+.badge-primary {
+  background: var(--primary);
+  color: white;
+  padding: 0.25rem 0.5rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  font-weight: 600;
+  display: inline-block;
+}
+
+.badge-warning {
+  background: var(--yellow);
+  color: white;
+  padding: 0.25rem 0.5rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  font-weight: 600;
+  display: inline-block;
+}
+
+.badge-danger {
+  background: var(--red);
+  color: white;
+  padding: 0.25rem 0.5rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  font-weight: 600;
+  display: inline-block;
+}
+
+.badge-info {
+  background: #6366f1;
+  color: white;
+  padding: 0.25rem 0.5rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  font-weight: 600;
+  display: inline-block;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   End Route Monitor Styles
+   ═══════════════════════════════════════════════════════════════════════ */

@@ -1,5 +1,6 @@
 const { DataTypes } = require('sequelize');
 const { sequelize } = require('../config/database');
+const { enumType } = require('./dbTypes');
 
 const User = sequelize.define('User', {
   id: {
@@ -23,7 +24,7 @@ const User = sequelize.define('User', {
     defaultValue: '',
   },
   role: {
-    type: DataTypes.ENUM('admin', 'analyst', 'viewer'),
+    type: enumType(['admin', 'analyst', 'viewer']),
     allowNull: false,
     defaultValue: 'analyst',
   },

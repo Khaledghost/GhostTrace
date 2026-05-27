@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { Op } = require('sequelize');
 const { Alert } = require('../models');
-const { isDbReady } = require('../config/database');
+const { isDbReady, sequelize } = require('../config/database');
 const alertService = require('../services/alertService');
 const profileStore = require('../core/profileStore');
 
@@ -14,37 +14,54 @@ router.post('/query', async (req, res, next) => {
     } = req.body;
 
     if (isDbReady()) {
-      const where = {};
-      if (severity) where.severity = severity;
-      if (status) where.status = status;
-      if (ip) where.ipAddress = { [Op.iLike]: `%${ip}%` };
-      if (profileKey) where.profileKey = profileKey;
-      if (since || until) {
-        where.detectedAt = {};
-        if (since) where.detectedAt[Op.gte] = new Date(since);
-        if (until) where.detectedAt[Op.lte] = new Date(until);
-      }
-      if (mitreTactic) where.mitreTactics = { [Op.contains]: [mitreTactic] };
-      if (mitreTechnique) where.mitreTechniques = { [Op.contains]: [mitreTechnique] };
-      if (q) {
-        where[Op.or] = [
-          { title: { [Op.iLike]: `%${q}%` } },
-          { description: { [Op.iLike]: `%${q}%` } },
-          { anomalyTypes: { [Op.contains]: [q] } },
-        ];
-      }
+      try {
+        const dialect = sequelize?.getDialect?.() || 'postgres';
+        const likeOp = dialect === 'postgres' ? Op.iLike : Op.like;
+        const containsOp = dialect === 'postgres' ? Op.contains : Op.like;
+        const where = {};
+        if (severity) where.severity = severity;
+        if (status) where.status = status;
+        if (ip) where.ipAddress = { [likeOp]: `%${ip}%` };
+        if (profileKey) where.profileKey = profileKey;
+        if (since || until) {
+          where.detectedAt = {};
+          if (since) where.detectedAt[Op.gte] = new Date(since);
+          if (until) where.detectedAt[Op.lte] = new Date(until);
+        }
+        if (mitreTactic) {
+          where.mitreTactics = dialect === 'postgres'
+            ? { [containsOp]: [mitreTactic] }
+            : { [containsOp]: `%${mitreTactic}%` };
+        }
+        if (mitreTechnique) {
+          where.mitreTechniques = dialect === 'postgres'
+            ? { [containsOp]: [mitreTechnique] }
+            : { [containsOp]: `%${mitreTechnique}%` };
+        }
+        if (q) {
+          where[Op.or] = [
+            { title: { [likeOp]: `%${q}%` } },
+            { description: { [likeOp]: `%${q}%` } },
+            dialect === 'postgres'
+              ? { anomalyTypes: { [containsOp]: [q] } }
+              : { anomalyTypes: { [containsOp]: `%${q}%` } },
+          ];
+        }
 
-      const alerts = await Alert.findAll({
-        where,
-        order: [['detectedAt', 'DESC']],
-        limit: Math.min(parseInt(limit, 10), 500),
-      });
+        const alerts = await Alert.findAll({
+          where,
+          order: [['detectedAt', 'DESC']],
+          limit: Math.min(parseInt(limit, 10), 500),
+        });
 
-      return res.json({
-        success: true,
-        count: alerts.length,
-        data: { alerts: alerts.map((a) => a.toJSON()) },
-      });
+        return res.json({
+          success: true,
+          count: alerts.length,
+          data: { alerts: alerts.map((a) => a.toJSON()) },
+        });
+      } catch (err) {
+        console.warn('[Hunt] DB fallback:', err.message);
+      }
     }
 
     const { items } = await alertService.list({ q, ip, profileKey, severity, status, since, until, limit });

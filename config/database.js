@@ -12,6 +12,25 @@ function buildSequelize() {
     idle: 10000,
   };
 
+  // SQLite support (embedded database)
+  if (cfg.dialect === 'sqlite' || opts.dialect === 'sqlite') {
+    const fs = require('fs');
+    const path = require('path');
+    const storage = cfg.storage || opts.storage || './data/ghosttrace.sqlite';
+    
+    // Ensure data directory exists
+    const dir = path.dirname(storage);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    
+    return new Sequelize({
+      dialect: 'sqlite',
+      storage,
+      logging,
+    });
+  }
+
   if (opts.url) {
     return new Sequelize(opts.url, { dialect: 'postgres', logging, pool });
   }
@@ -33,6 +52,43 @@ const loadModels = () => {
   require('../models');
 };
 
+async function tryCreateDatabase() {
+  const cfg = platformDb.getConfig();
+  const opts = platformDb.buildSequelizeOptions(cfg);
+  
+  if (opts.url) {
+    return;
+  }
+
+  try {
+    const { Sequelize } = require('sequelize');
+    const tempSequelize = new Sequelize('postgres', cfg.username, cfg.password, {
+      host: cfg.host,
+      port: cfg.port,
+      dialect: 'postgres',
+      logging: false,
+      dialectOptions: cfg.ssl ? { ssl: { require: true, rejectUnauthorized: false } } : {},
+    });
+
+    await tempSequelize.authenticate();
+    
+    const [results] = await tempSequelize.query(
+      `SELECT 1 FROM pg_database WHERE datname = '${cfg.database}'`
+    );
+
+    if (results.length === 0) {
+      await tempSequelize.query(`CREATE DATABASE "${cfg.database}"`);
+      console.log(`  ✓ Created database: ${cfg.database}`);
+    }
+
+    await tempSequelize.close();
+  } catch (error) {
+    if (error.message) {
+      console.warn(`  ⚠ Could not auto-create database: ${error.message || error}`);
+    }
+  }
+}
+
 const connectDB = async (options = {}) => {
   loadModels();
   const {
@@ -41,16 +97,18 @@ const connectDB = async (options = {}) => {
     required = process.env.DB_REQUIRED !== 'false',
   } = options;
 
+  await tryCreateDatabase();
+
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
       await sequelize.authenticate();
       dbReady = true;
       const cfg = platformDb.getConfig();
-      console.log(`PostgreSQL connected (${cfg.host}:${cfg.port}/${cfg.database})`);
+      console.log(`  ✓ Database connected (${cfg.host}:${cfg.port}/${cfg.database})`);
 
-      if (process.env.DB_SYNC === 'true') {
+      if (process.env.DB_SYNC === 'true' || process.env.GHOST_DB_SYNC === 'true' || cfg.dialect === 'sqlite') {
         await sequelize.sync({ alter: true });
-        console.log('Database models synced');
+        console.log('  ✓ Database tables synced');
         const policyService = require('../services/policyService');
         await policyService.seedDefaults();
         await policyService.refreshMemoryFromDb();
@@ -60,7 +118,8 @@ const connectDB = async (options = {}) => {
       return;
     } catch (error) {
       dbReady = false;
-      console.error(`PostgreSQL connection attempt ${attempt}/${retries} failed: ${error.message}`);
+      const errorMsg = error.message || error.toString() || 'Unknown error';
+      console.error(`  ⚠ Database connection attempt ${attempt}/${retries} failed: ${errorMsg}`);
       if (attempt < retries) {
         await new Promise((r) => setTimeout(r, delayMs));
       }
@@ -68,10 +127,11 @@ const connectDB = async (options = {}) => {
   }
 
   if (required) {
-    console.error('PostgreSQL connection failed after all retries');
+    console.error('  ❌ Database connection failed after all retries');
+    console.error('  💡 Tip: Set DB_ENABLED=false in .env to run without database');
     process.exit(1);
   }
-  console.warn('PostgreSQL unavailable — continuing without persistence');
+  console.warn('  ⚠ Database unavailable — continuing without persistence');
 };
 
 async function savePlatformConfig(patch) {

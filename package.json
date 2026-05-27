@@ -1,8 +1,9 @@
 {
-  "name": "ghost-trace",
-  "version": "2.1.0",
-  "description": "Open-source behavioral detection & response (BDR) platform for SOC and MDR teams",
-  "main": "server.js",
+  "name": "ghosttrace",
+  "version": "3.0.0",
+  "description": "Drop-in behavioral detection & response for any Node.js/Express backend",
+  "main": "index.js",
+  "types": "index.d.ts",
   "bin": "server.js",
   "pkg": {
     "assets": [
@@ -22,19 +23,47 @@
     "docker:prod": "docker compose --profile production up -d --build"
   },
   "keywords": [
+    "security",
     "threat-detection",
     "behavioral-analytics",
-    "security"
+    "express-middleware",
+    "soc",
+    "mdr",
+    "mitre-attack",
+    "behavioral-dna",
+    "anomaly-detection"
   ],
   "author": "",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/ghosttrace"
+  },
+  "peerDependencies": {
+    "express": "^4.18.0"
+  },
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "lib/",
+    "middleware/",
+    "services/",
+    "models/",
+    "core/",
+    "utils/",
+    "routes/",
+    "config/",
+    "public/",
+    "README.md",
+    "LICENSE"
+  ],
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
     "bcryptjs": "^2.4.3",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "dotenv": "^16.0.3",
-    "express": "^4.18.2",
+    "express": "^4.18.0",
     "express-rate-limit": "^6.8.1",
     "geoip-lite": "^2.0.2",
     "helmet": "^7.0.0",
@@ -47,7 +76,8 @@
     "node-fetch": "^3.3.2",
     "pg": "^8.11.3",
     "pg-hstore": "^2.3.4",
-    "sequelize": "^6.37.8"
+    "sequelize": "^6.37.8",
+    "sqlite3": "^5.1.7"
   },
   "devDependencies": {
     "nodemon": "^3.1.0",

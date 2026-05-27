@@ -1,5 +1,6 @@
 const { DataTypes } = require('sequelize');
 const { sequelize } = require('../config/database');
+const { jsonType, enumType } = require('./dbTypes');
 
 const Alert = sequelize.define('Alert', {
   id: {
@@ -10,30 +11,30 @@ const Alert = sequelize.define('Alert', {
   title: { type: DataTypes.STRING(512), allowNull: false },
   description: { type: DataTypes.TEXT, allowNull: true },
   severity: {
-    type: DataTypes.ENUM('info', 'low', 'medium', 'high', 'critical'),
+    type: enumType(['info', 'low', 'medium', 'high', 'critical']),
     allowNull: false,
     defaultValue: 'medium',
   },
   status: {
-    type: DataTypes.ENUM('new', 'acknowledged', 'investigating', 'escalated', 'resolved', 'false_positive'),
+    type: enumType(['new', 'acknowledged', 'investigating', 'escalated', 'resolved', 'false_positive']),
     defaultValue: 'new',
     index: true,
   },
   source: {
-    type: DataTypes.ENUM('behavioral_dna', 'external_monitor', 'manual', 'api', 'webhook'),
+    type: enumType(['behavioral_dna', 'external_monitor', 'manual', 'api', 'webhook']),
     defaultValue: 'behavioral_dna',
   },
   profileKey: { type: DataTypes.STRING(256), allowNull: true, index: true },
   ipAddress: { type: DataTypes.STRING(64), allowNull: true, index: true },
   userId: { type: DataTypes.STRING(128), allowNull: true },
   accountId: { type: DataTypes.STRING(128), allowNull: true },
-  anomalyTypes: { type: DataTypes.JSONB, defaultValue: [] },
-  mitreTactics: { type: DataTypes.JSONB, defaultValue: [] },
-  mitreTechniques: { type: DataTypes.JSONB, defaultValue: [] },
+  anomalyTypes: { type: jsonType(), defaultValue: [] },
+  mitreTactics: { type: jsonType(), defaultValue: [] },
+  mitreTechniques: { type: jsonType(), defaultValue: [] },
   riskScore: { type: DataTypes.INTEGER, defaultValue: 0 },
-  rawActivity: { type: DataTypes.JSONB, defaultValue: {} },
+  rawActivity: { type: jsonType(), defaultValue: {} },
   aiExplanation: { type: DataTypes.TEXT, allowNull: true },
-  tags: { type: DataTypes.JSONB, defaultValue: [] },
+  tags: { type: jsonType(), defaultValue: [] },
   assignedTo: { type: DataTypes.STRING(128), allowNull: true },
   incidentId: { type: DataTypes.UUID, allowNull: true, index: true },
   detectedAt: { type: DataTypes.DATE, defaultValue: DataTypes.NOW, index: true },

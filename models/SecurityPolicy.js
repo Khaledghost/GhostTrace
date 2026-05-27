@@ -1,5 +1,6 @@
 const { DataTypes } = require('sequelize');
 const { sequelize } = require('../config/database');
+const { jsonType } = require('./dbTypes');
 
 const SecurityPolicy = sequelize.define('SecurityPolicy', {
   id: {
@@ -14,7 +15,7 @@ const SecurityPolicy = sequelize.define('SecurityPolicy', {
   riskBlockThreshold: { type: DataTypes.INTEGER, defaultValue: 70 },
   rateLimitPerWindow: { type: DataTypes.INTEGER, defaultValue: 120 },
   autoEscalateCritical: { type: DataTypes.BOOLEAN, defaultValue: true },
-  rules: { type: DataTypes.JSONB, defaultValue: [] },
+  rules: { type: jsonType(), defaultValue: [] },
 }, {
   tableName: 'security_policies',
 });

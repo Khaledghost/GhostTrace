@@ -26,6 +26,7 @@
 const threatDetectionService = require('../services/threatDetectionService');
 const { generateClientDNA, generateClientDNAObject } = require('../utils/dna');
 const RequestLogger = require('./requestLogger');
+const routeLogger = require('../services/routeLogger');
 
 const DEFAULT_ALLOWLIST = [
   '/health',
@@ -49,12 +50,15 @@ module.exports = function createProtectionMiddleware(options = {}) {
     identifyUser        = defaultIdentifyUser,
     mapActivity         = defaultMapActivity,
     onThreat            = null,
+    routePath           = null,
   } = options;
 
   const combinedAllowlist = [...DEFAULT_ALLOWLIST, ...allowlist];
-  const rateLimitMap = new Map(); // key → { count, resetAt }
+  const rateLimitMap = new Map();
 
   return async function protectionMiddleware(req, res, next) {
+    const startTime = Date.now();
+    
     try {
       // ── DNA Fingerprint ──────────────────────────────────────────────────
       const dna = generateClientDNA(req);
@@ -69,8 +73,8 @@ module.exports = function createProtectionMiddleware(options = {}) {
         maxAge: 1000 * 60 * 60 * 24 * 365,
       });
 
-      const pathStr = req.path || req.originalUrl || '';
-      const isAnalystRoute = /^\/api\/(soc|alerts|incidents|hunt|policies|audit|threats|logger|sources|auth|integrations)/.test(pathStr)
+      const pathStr = req.originalUrl || req.path || '';
+      const isAnalystRoute = /^\/api\/(soc|alerts|incidents|hunt|policies|audit|threats|logger|sources|auth|integrations|routes)/.test(pathStr)
         || pathStr === '/' || pathStr.endsWith('.html') || pathStr.endsWith('.css') || pathStr.endsWith('.js');
       const skipBlockForAnalyst = !!(req.cookies?.auth_token && isAnalystRoute);
 
@@ -94,6 +98,16 @@ module.exports = function createProtectionMiddleware(options = {}) {
         const retryAfter = Math.ceil((rl.resetAt - now) / 1000);
         res.setHeader('Retry-After', retryAfter);
         res.setHeader('X-Blocked-By', 'BehavioralDNA-RateLimit');
+        
+        // Log the blocked request
+        const blockedAnalysis = { 
+          blocked: true, 
+          riskScore: 100, 
+          threatLevel: 'critical',
+          anomalies: [{ type: 'rate_limit_exceeded', severity: 'critical' }]
+        };
+        routeLogger.logRequest(req, res, blockedAnalysis);
+        
         return res.status(429).json({
           success: false,
           error: 'Rate limit exceeded',
@@ -102,6 +116,7 @@ module.exports = function createProtectionMiddleware(options = {}) {
       }
 
       // ── Behavioral Analysis ──────────────────────────────────────────────
+      let analysis = null;
       if (enableAnalysis) {
         const { userId, accountId } = identifyUser(req);
         const baseActivity = mapActivity(req);
@@ -127,9 +142,27 @@ module.exports = function createProtectionMiddleware(options = {}) {
         };
 
         try {
-          const analysis = await threatDetectionService.analyzeActivity(activity);
+          analysis = await threatDetectionService.analyzeActivity(activity);
           req.protectionAnalysis = analysis;
           req.clientDNAKey = analysis.profileKey;
+
+          // Capture response status for logging
+          const originalSend = res.send;
+          const originalJson = res.json;
+          
+          res.send = function(data) {
+            res.send = originalSend;
+            const result = originalSend.call(this, data);
+            routeLogger.logRequest(req, res, analysis);
+            return result;
+          };
+          
+          res.json = function(data) {
+            res.json = originalJson;
+            const result = originalJson.call(this, data);
+            routeLogger.logRequest(req, res, analysis);
+            return result;
+          };
 
           // ── Blocking logic ─────────────────────────────────────────────
           if (!passthrough && !skipBlockForAnalyst && blockOnThreat && analysis) {
@@ -145,6 +178,10 @@ module.exports = function createProtectionMiddleware(options = {}) {
               res.setHeader('X-Threat-Level', analysis.threatLevel);
               threatDetectionService._engine && (threatDetectionService.getAllStats().totalBlocked =
                 (threatDetectionService.getAllStats().totalBlocked || 0) + 1);
+
+              // Mark as blocked in log
+              analysis.blocked = true;
+              routeLogger.logRequest(req, res, analysis);
 
               // Custom threat handler takes priority
               if (typeof onThreat === 'function') {
@@ -169,13 +206,38 @@ module.exports = function createProtectionMiddleware(options = {}) {
           }
         } catch (err) {
           // Never fail the upstream request due to analysis errors
-          req.protectionAnalysis = { error: true, message: err.message };
+          const errorAnalysis = { error: true, message: err.message, riskScore: 0, threatLevel: 'none' };
+          req.protectionAnalysis = errorAnalysis;
+          routeLogger.logRequest(req, res, errorAnalysis);
         }
+      } else {
+        // Log even without analysis
+        const basicAnalysis = { riskScore: 0, threatLevel: 'none', blocked: false };
+        
+        // Capture response for logging
+        const originalSend = res.send;
+        const originalJson = res.json;
+        
+        res.send = function(data) {
+          res.send = originalSend;
+          const result = originalSend.call(this, data);
+          routeLogger.logRequest(req, res, basicAnalysis);
+          return result;
+        };
+        
+        res.json = function(data) {
+          res.json = originalJson;
+          const result = originalJson.call(this, data);
+          routeLogger.logRequest(req, res, basicAnalysis);
+          return result;
+        };
       }
 
       next();
     } catch (error) {
-      req.protectionAnalysis = { error: true, message: error.message };
+      const errorAnalysis = { error: true, message: error.message, riskScore: 0, threatLevel: 'none' };
+      req.protectionAnalysis = errorAnalysis;
+      routeLogger.logRequest(req, res, errorAnalysis);
       next();
     }
   };

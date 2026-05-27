@@ -1,5 +1,6 @@
 const { DataTypes } = require('sequelize');
 const { sequelize } = require('../config/database');
+const { jsonType, enumType } = require('./dbTypes');
 
 const BehavioralProfile = sequelize.define('BehavioralProfile', {
   id: {
@@ -18,7 +19,7 @@ const BehavioralProfile = sequelize.define('BehavioralProfile', {
     index: true
   },
   loginPattern: {
-    type: DataTypes.JSONB,
+    type: jsonType(),
     defaultValue: {
       averageLoginTime: [],
       loginFrequency: 0,
@@ -27,7 +28,7 @@ const BehavioralProfile = sequelize.define('BehavioralProfile', {
     }
   },
   accessPattern: {
-    type: DataTypes.JSONB,
+    type: jsonType(),
     defaultValue: {
       endpoints: [],
       commonResources: [],
@@ -35,7 +36,7 @@ const BehavioralProfile = sequelize.define('BehavioralProfile', {
     }
   },
   resourceUsage: {
-    type: DataTypes.JSONB,
+    type: jsonType(),
     defaultValue: {
       cpuUsage: [],
       memoryUsage: [],
@@ -44,7 +45,7 @@ const BehavioralProfile = sequelize.define('BehavioralProfile', {
     }
   },
   geographicPattern: {
-    type: DataTypes.JSONB,
+    type: jsonType(),
     defaultValue: {
       locations: [],
       primaryLocation: '',
@@ -52,7 +53,7 @@ const BehavioralProfile = sequelize.define('BehavioralProfile', {
     }
   },
   devicePattern: {
-    type: DataTypes.JSONB,
+    type: jsonType(),
     defaultValue: {
       devices: [],
       primaryDevice: ''
@@ -71,7 +72,7 @@ const BehavioralProfile = sequelize.define('BehavioralProfile', {
     }
   },
   threatLevel: {
-    type: DataTypes.ENUM('low', 'medium', 'high', 'critical'),
+    type: enumType(['low', 'medium', 'high', 'critical']),
     defaultValue: 'low'
   }
 }, {

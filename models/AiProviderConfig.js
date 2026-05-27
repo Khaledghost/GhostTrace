@@ -1,5 +1,6 @@
 const { DataTypes } = require('sequelize');
 const { sequelize } = require('../config/database');
+const { jsonType, enumType } = require('./dbTypes');
 
 const AiProviderConfig = sequelize.define('AiProviderConfig', {
   id: {
@@ -9,7 +10,7 @@ const AiProviderConfig = sequelize.define('AiProviderConfig', {
   },
   name: { type: DataTypes.STRING(128), allowNull: false },
   provider: {
-    type: DataTypes.ENUM('openai', 'anthropic', 'gemini', 'grok', 'ollama', 'custom'),
+    type: enumType(['openai', 'anthropic', 'gemini', 'grok', 'ollama', 'custom']),
     allowNull: false,
   },
   apiKey: { type: DataTypes.TEXT, allowNull: true },
@@ -19,7 +20,7 @@ const AiProviderConfig = sequelize.define('AiProviderConfig', {
   isDefault: { type: DataTypes.BOOLEAN, defaultValue: false },
   priority: { type: DataTypes.INTEGER, defaultValue: 0 },
   options: {
-    type: DataTypes.JSONB,
+    type: jsonType(),
     defaultValue: {
       temperature: 0.3,
       maxTokens: 2048,

@@ -1,6 +1,6 @@
 const { Op } = require('sequelize');
 const { Alert, Incident } = require('../models');
-const { isDbReady } = require('../config/database');
+const { isDbReady, sequelize } = require('../config/database');
 const { mapAnomalies } = require('../core/mitreMapper');
 const auditService = require('./auditService');
 
@@ -91,33 +91,39 @@ async function list(filters = {}) {
   } = filters;
 
   if (isDbReady()) {
-    const where = {};
-    if (status) where.status = status;
-    if (severity) where.severity = severity;
-    if (ip) where.ipAddress = ip;
-    if (profileKey) where.profileKey = profileKey;
-    if (incidentId) where.incidentId = incidentId;
-    if (since || until) {
-      where.detectedAt = {};
-      if (since) where.detectedAt[Op.gte] = new Date(since);
-      if (until) where.detectedAt[Op.lte] = new Date(until);
-    }
-    if (q) {
-      where[Op.or] = [
-        { title: { [Op.iLike]: `%${q}%` } },
-        { description: { [Op.iLike]: `%${q}%` } },
-        { ipAddress: { [Op.iLike]: `%${q}%` } },
-      ];
-    }
+    try {
+      const dialect = sequelize?.getDialect?.() || 'postgres';
+      const likeOp = dialect === 'postgres' ? Op.iLike : Op.like;
+      const where = {};
+      if (status) where.status = status;
+      if (severity) where.severity = severity;
+      if (ip) where.ipAddress = ip;
+      if (profileKey) where.profileKey = profileKey;
+      if (incidentId) where.incidentId = incidentId;
+      if (since || until) {
+        where.detectedAt = {};
+        if (since) where.detectedAt[Op.gte] = new Date(since);
+        if (until) where.detectedAt[Op.lte] = new Date(until);
+      }
+      if (q) {
+        where[Op.or] = [
+          { title: { [likeOp]: `%${q}%` } },
+          { description: { [likeOp]: `%${q}%` } },
+          { ipAddress: { [likeOp]: `%${q}%` } },
+        ];
+      }
 
-    const { rows, count } = await Alert.findAndCountAll({
-      where,
-      order: [['detectedAt', 'DESC']],
-      limit: parseInt(limit, 10),
-      offset: parseInt(offset, 10),
-      include: [{ model: Incident, as: 'incident', attributes: ['id', 'title', 'status'] }],
-    });
-    return { items: rows.map((r) => r.toJSON()), total: count };
+      const { rows, count } = await Alert.findAndCountAll({
+        where,
+        order: [['detectedAt', 'DESC']],
+        limit: parseInt(limit, 10),
+        offset: parseInt(offset, 10),
+        include: [{ model: Incident, as: 'incident', attributes: ['id', 'title', 'status'] }],
+      });
+      return { items: rows.map((r) => r.toJSON()), total: count };
+    } catch (err) {
+      console.warn('[AlertService] DB list fallback:', err.message);
+    }
   }
 
   let items = [...memoryAlerts.values()];
@@ -176,24 +182,28 @@ async function updateStatus(id, { status, resolutionNotes, assignedTo, actor = '
 
 async function getStats() {
   if (isDbReady()) {
-    const [byStatus, bySeverity, total] = await Promise.all([
-      Alert.findAll({
-        attributes: ['status', [Alert.sequelize.fn('COUNT', '*'), 'count']],
-        group: ['status'],
-        raw: true,
-      }),
-      Alert.findAll({
-        attributes: ['severity', [Alert.sequelize.fn('COUNT', '*'), 'count']],
-        group: ['severity'],
-        raw: true,
-      }),
-      Alert.count(),
-    ]);
-    return {
-      total,
-      byStatus: Object.fromEntries(byStatus.map((r) => [r.status, parseInt(r.count, 10)])),
-      bySeverity: Object.fromEntries(bySeverity.map((r) => [r.severity, parseInt(r.count, 10)])),
-    };
+    try {
+      const [byStatus, bySeverity, total] = await Promise.all([
+        Alert.findAll({
+          attributes: ['status', [Alert.sequelize.fn('COUNT', '*'), 'count']],
+          group: ['status'],
+          raw: true,
+        }),
+        Alert.findAll({
+          attributes: ['severity', [Alert.sequelize.fn('COUNT', '*'), 'count']],
+          group: ['severity'],
+          raw: true,
+        }),
+        Alert.count(),
+      ]);
+      return {
+        total,
+        byStatus: Object.fromEntries(byStatus.map((r) => [r.status, parseInt(r.count, 10)])),
+        bySeverity: Object.fromEntries(bySeverity.map((r) => [r.severity, parseInt(r.count, 10)])),
+      };
+    } catch (err) {
+      console.warn('[AlertService] DB stats fallback:', err.message);
+    }
   }
   const items = [...memoryAlerts.values()];
   return {

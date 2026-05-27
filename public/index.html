@@ -68,6 +68,9 @@
       <a href="#" class="nav-item" data-section="logs" id="nav-logs">
         <i class="fas fa-terminal"></i> <span>Request Logs</span>
       </a>
+      <a href="#" class="nav-item" data-section="routes" id="nav-routes">
+        <i class="fas fa-route"></i> <span>Route Monitor</span>
+      </a>
     </nav>
 
     <nav class="nav-section">
@@ -373,6 +376,118 @@
             <div class="empty-state">
               <i class="fas fa-circle-notch fa-spin"></i>
               <p>Monitoring threat intelligence feed...</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ==================== PAGE: ROUTE MONITOR ==================== -->
+      <section class="page" id="page-routes">
+        <div class="card">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+            <h3><i class="fas fa-route"></i> Route Monitor</h3>
+            <button class="btn-sm" onclick="window.RouteMonitor?.refresh?.()">
+              <i class="fas fa-sync"></i> Refresh
+            </button>
+          </div>
+          
+          <!-- Stats Cards -->
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 2rem;">
+            <div class="stat-card">
+              <div class="stat-value" id="routeStatTotal">0</div>
+              <div class="stat-label">Total Requests</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-value" id="routeStatBlocked">0</div>
+              <div class="stat-label">Blocked</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-value" id="routeStatHighRisk">0</div>
+              <div class="stat-label">High Risk</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-value" id="routeStatIPs">0</div>
+              <div class="stat-label">Unique IPs</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-value" id="routeStatRegistered">0</div>
+              <div class="stat-label">Registered Routes</div>
+            </div>
+          </div>
+
+          <!-- Tabs -->
+          <div style="display: flex; gap: 1rem; border-bottom: 1px solid var(--border); margin-bottom: 1.5rem;">
+            <button class="tab-btn active" data-tab="logs" onclick="window.RouteMonitor?.switchTab('logs')">
+              <i class="fas fa-list"></i> Request Logs
+            </button>
+            <button class="tab-btn" data-tab="routes" onclick="window.RouteMonitor?.switchTab('routes')">
+              <i class="fas fa-route"></i> Secured Routes
+            </button>
+          </div>
+
+          <!-- Logs Tab -->
+          <div class="tab-content active" id="routeTabLogs">
+            <!-- Filters -->
+            <div style="display: flex; gap: 0.5rem; margin-bottom: 1rem; flex-wrap: wrap;">
+              <input type="text" id="routeFilterPath" placeholder="Filter by path..." 
+                     style="flex: 1; min-width: 150px;" onkeyup="window.RouteMonitor?.applyFilters()">
+              <select id="routeFilterMethod" style="min-width: 120px;" onchange="window.RouteMonitor?.applyFilters()">
+                <option value="">All Methods</option>
+                <option value="GET">GET</option>
+                <option value="POST">POST</option>
+                <option value="PUT">PUT</option>
+                <option value="DELETE">DELETE</option>
+              </select>
+              <input type="text" id="routeFilterIP" placeholder="Filter by IP..." 
+                     style="min-width: 150px;" onkeyup="window.RouteMonitor?.applyFilters()">
+              <select id="routeFilterBlocked" style="min-width: 120px;" onchange="window.RouteMonitor?.applyFilters()">
+                <option value="">All Requests</option>
+                <option value="true">Blocked Only</option>
+                <option value="false">Allowed Only</option>
+              </select>
+            </div>
+
+            <!-- Request Logs Table -->
+            <div class="table-container">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Time</th>
+                    <th>Method</th>
+                    <th>Path</th>
+                    <th>IP</th>
+                    <th>Risk</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="routeLogsBody">
+                  <tr><td colspan="7" style="text-align: center; padding: 2rem;">Loading...</td></tr>
+                </tbody>
+              </table>
+            </div>
+
+            <!-- Pagination -->
+            <div id="routeLogsPagination" style="display: flex; justify-content: center; gap: 0.5rem; margin-top: 1rem;"></div>
+          </div>
+
+          <!-- Routes Tab -->
+          <div class="tab-content" id="routeTabRoutes">
+            <div class="table-container">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Method</th>
+                    <th>Path</th>
+                    <th>Registered</th>
+                    <th>Requests</th>
+                    <th>Last Request</th>
+                  </tr>
+                </thead>
+                <tbody id="routeRoutesBody">
+                  <tr><td colspan="5" style="text-align: center; padding: 2rem;">Loading...</td></tr>
+                </tbody>
+              </table>
             </div>
           </div>
         </div>
@@ -867,5 +982,6 @@
   <script src="app.js"></script>
   <script src="soc-app.js"></script>
   <script src="ai-console.js"></script>
+  <script src="route-monitor.js"></script>
 </body>
 </html>

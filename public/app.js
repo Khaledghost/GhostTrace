@@ -76,7 +76,7 @@ function navigate(page) {
   
   const titles = window.SOC?.titles || {
     dashboard:'Overview', threats:'Reports', profiles:'Profiles',
-    analyze:'AI Triage', logs:'Request Logs', sources:'Data Sources', policies:'Security Policies',
+    analyze:'AI Triage', logs:'Request Logs', routes:'Route Monitor', sources:'Data Sources', policies:'Security Policies',
     alerts:'Alert Queue', incidents:'Incidents', hunt:'Threat Hunt', mitre:'MITRE ATT&CK',
     integrations:'Integrations', audit:'Audit Trail', users:'Team', globe:'Global Traffic',
   };

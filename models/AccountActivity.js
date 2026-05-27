@@ -1,5 +1,6 @@
 const { DataTypes } = require('sequelize');
 const { sequelize } = require('../config/database');
+const { jsonType, enumType } = require('./dbTypes');
 
 const AccountActivity = sequelize.define('AccountActivity', {
   id: {
@@ -17,14 +18,14 @@ const AccountActivity = sequelize.define('AccountActivity', {
     allowNull: false
   },
   activityType: {
-    type: DataTypes.ENUM(
+    type: enumType([
       'login',
       'logout',
       'resource_access',
       'api_call',
       'data_access',
-      'configuration_change'
-    ),
+      'configuration_change',
+    ]),
     allowNull: false
   },
   timestamp: {
@@ -41,11 +42,11 @@ const AccountActivity = sequelize.define('AccountActivity', {
     allowNull: true
   },
   deviceInfo: {
-    type: DataTypes.JSONB,
+    type: jsonType(),
     allowNull: true
   },
   location: {
-    type: DataTypes.JSONB,
+    type: jsonType(),
     allowNull: true
   },
   endpoint: {
@@ -53,7 +54,7 @@ const AccountActivity = sequelize.define('AccountActivity', {
     allowNull: true
   },
   status: {
-    type: DataTypes.ENUM('success', 'failed', 'blocked'),
+    type: enumType(['success', 'failed', 'blocked']),
     defaultValue: 'success'
   },
   responseTime: {
@@ -62,11 +63,11 @@ const AccountActivity = sequelize.define('AccountActivity', {
     allowNull: true
   },
   resourceUsage: {
-    type: DataTypes.JSONB,
+    type: jsonType(),
     allowNull: true
   },
   metadata: {
-    type: DataTypes.JSONB,
+    type: jsonType(),
     allowNull: true
   }
 }, {

@@ -1,5 +1,6 @@
 const { DataTypes } = require('sequelize');
 const { sequelize } = require('../config/database');
+const { jsonType, enumType } = require('./dbTypes');
 
 const Incident = sequelize.define('Incident', {
   id: {
@@ -10,19 +11,19 @@ const Incident = sequelize.define('Incident', {
   title: { type: DataTypes.STRING(512), allowNull: false },
   summary: { type: DataTypes.TEXT, allowNull: true },
   severity: {
-    type: DataTypes.ENUM('low', 'medium', 'high', 'critical'),
+    type: enumType(['low', 'medium', 'high', 'critical']),
     defaultValue: 'medium',
   },
   status: {
-    type: DataTypes.ENUM('open', 'investigating', 'contained', 'resolved', 'closed'),
+    type: enumType(['open', 'investigating', 'contained', 'resolved', 'closed']),
     defaultValue: 'open',
     index: true,
   },
   priority: { type: DataTypes.INTEGER, defaultValue: 3 },
   assignedTo: { type: DataTypes.STRING(128), allowNull: true },
-  mitreTactics: { type: DataTypes.JSONB, defaultValue: [] },
-  tags: { type: DataTypes.JSONB, defaultValue: [] },
-  timeline: { type: DataTypes.JSONB, defaultValue: [] },
+  mitreTactics: { type: jsonType(), defaultValue: [] },
+  tags: { type: jsonType(), defaultValue: [] },
+  timeline: { type: jsonType(), defaultValue: [] },
   alertCount: { type: DataTypes.INTEGER, defaultValue: 0 },
   closedAt: { type: DataTypes.DATE, allowNull: true },
 }, {

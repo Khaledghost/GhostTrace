@@ -16,8 +16,12 @@ async function log({ action, actor = 'system', resourceType, resourceId, metadat
   };
 
   if (isDbReady()) {
-    await AuditLog.create(entry);
-    return entry;
+    try {
+      await AuditLog.create(entry);
+      return entry;
+    } catch (err) {
+      console.warn('[AuditService] DB log fallback:', err.message);
+    }
   }
 
   memoryLog.unshift(entry);
@@ -27,16 +31,20 @@ async function log({ action, actor = 'system', resourceType, resourceId, metadat
 
 async function list({ limit = 100, offset = 0, action, actor } = {}) {
   if (isDbReady()) {
-    const where = {};
-    if (action) where.action = action;
-    if (actor) where.actor = actor;
-    const { rows, count } = await AuditLog.findAndCountAll({
-      where,
-      order: [['createdAt', 'DESC']],
-      limit,
-      offset,
-    });
-    return { items: rows.map((r) => r.toJSON()), total: count };
+    try {
+      const where = {};
+      if (action) where.action = action;
+      if (actor) where.actor = actor;
+      const { rows, count } = await AuditLog.findAndCountAll({
+        where,
+        order: [['createdAt', 'DESC']],
+        limit,
+        offset,
+      });
+      return { items: rows.map((r) => r.toJSON()), total: count };
+    } catch (err) {
+      console.warn('[AuditService] DB list fallback:', err.message);
+    }
   }
   let items = [...memoryLog];
   if (action) items = items.filter((i) => i.action === action);
