@@ -1,0 +1,312 @@
+═══════════════════════════════════════════════════════════════════════════════
+COPY-PASTE PROMPTS FOR AGENTS
+═══════════════════════════════════════════════════════════════════════════════
+
+This file contains ready-to-use prompts for both the coding agent and validating
+agent. Simply copy the relevant section and paste it into your agent chat.
+
+═══════════════════════════════════════════════════════════════════════════════
+PROMPT FOR CODING AGENT
+═══════════════════════════════════════════════════════════════════════════════
+
+Transform GhostTrace from a standalone application into a user-friendly npm package that can be easily integrated into any Node.js/Express backend.
+
+**Read and implement everything in:** `/home/wal8y/Desktop/graduation/CODING_AGENT_PROMPT.md`
+
+**Core Goal:** Enable developers to:
+1. Install: `npm install ghosttrace`
+2. Initialize in their app: `await ghosttrace.init({ adminEmail: '...', adminPassword: '...' })`
+3. Secure routes: `app.use('/api', ghosttrace.secure())`
+4. Access dashboard: `http://localhost:3001`
+
+**Key Requirements:**
+
+1. **Create Main Entry Point** (`index.js`):
+   - Export `init()` function
+   - Export `secure()` middleware factory
+   - Export version
+
+2. **Create lib/ Directory** with:
+   - `lib/init.js` - Initialization (setup DB, admin, dashboard server)
+   - `lib/middleware.js` - Middleware factory (secure function)
+   - `lib/dashboard-server.js` - Separate Express server for dashboard
+   - `lib/config.js` - Configuration management with validation
+   - `lib/setup-admin.js` - Admin user creation with bcrypt
+
+3. **Environment Variables** (all prefixed with GHOST_):
+   - GHOST_ADMIN_EMAIL (required)
+   - GHOST_ADMIN_PASS (required)
+   - GHOST_PORT (dashboard port, default 3001)
+   - GHOST_PROXY (proxy port, default 3002)
+   - GHOST_BLOCK_THRESHOLD (default 70)
+   - GHOST_RATE_LIMIT (default 120)
+   - GHOST_BLOCK_ON_THREAT (default true)
+   - GHOST_DB_* (database config)
+
+4. **Database Auto-Setup**:
+   - Auto-create database if it doesn't exist
+   - Run migrations automatically
+   - Fallback to SQLite if no DB configured
+   - No manual setup required by user
+
+5. **Admin User Setup**:
+   - Created automatically on first init
+   - Updated if credentials change
+   - Password hashed with bcrypt
+   - Must provide clear error if credentials missing
+
+6. **Dashboard Separation**:
+   - Runs on separate port (GHOST_PORT)
+   - Includes all existing SOC/MDR routes
+   - Serves static UI files
+   - Independent from user's main app
+
+7. **Examples** (create in examples/ directory):
+   - `express-basic.js` - Minimal example
+   - `express-social-media.js` - Social media backend example
+   - `express-ecommerce.js` - E-commerce backend example
+
+8. **Documentation**:
+   - Update README.md with integration focus
+   - Create .env.example with GHOST_ variables
+   - Add TypeScript definitions (index.d.ts) if possible
+
+9. **Backward Compatibility**:
+   - Keep existing server.js working as standalone mode
+   - Don't break existing API
+   - Existing deployments must continue working
+
+10. **Error Handling**:
+    - Clear error if admin credentials missing
+    - Graceful fallback if database fails
+    - Port conflict handling
+    - Helpful error messages
+
+**Implementation Checklist** (mark each when complete):
+□ Create index.js
+□ Create lib/init.js
+□ Create lib/middleware.js
+□ Create lib/dashboard-server.js
+□ Create lib/config.js
+□ Create lib/setup-admin.js
+□ Update config/database.js for auto-creation
+□ Update package.json for npm
+□ Create examples/express-basic.js
+□ Create examples/express-social-media.js
+□ Create examples/express-ecommerce.js
+□ Update README.md
+□ Create .env.example with GHOST_ vars
+□ Test with sample Express app
+□ Verify backward compatibility
+□ Add TypeScript definitions
+
+**Success Criteria:**
+- Integration takes < 10 lines of code
+- Works with zero manual database setup
+- Dashboard accessible immediately after init
+- Admin login works with provided credentials
+- All existing features continue working
+
+**Important:** Follow the detailed specifications in CODING_AGENT_PROMPT.md exactly. Every function, parameter, and behavior is specified there.
+
+═══════════════════════════════════════════════════════════════════════════════
+PROMPT FOR VALIDATING AGENT
+═══════════════════════════════════════════════════════════════════════════════
+
+Validate the GhostTrace npm package implementation according to the comprehensive checklist.
+
+**Read and validate against:** `/home/wal8y/Desktop/graduation/VALIDATING_AGENT_PROMPT.md`
+
+**Your Mission:**
+Verify that GhostTrace has been correctly transformed into an easy-to-use npm package that developers can integrate with minimal effort.
+
+**Validation Phases:**
+
+**Phase 1: File Structure Validation**
+Check that all required files exist:
+- index.js (main entry)
+- lib/init.js, lib/middleware.js, lib/dashboard-server.js, lib/config.js, lib/setup-admin.js
+- examples/*.js
+- Updated package.json, README.md, .env.example
+
+**Phase 2: Code Quality Validation**
+For each file, verify:
+- Exports correct functions/objects
+- Accepts correct parameters
+- Handles errors properly
+- Has clear error messages
+- Follows specifications from coding prompt
+
+**Phase 3: Integration Testing**
+Create and run test Express app:
+```javascript
+const express = require('express');
+const ghosttrace = require('./index');
+
+const app = express();
+
+(async () => {
+  await ghosttrace.init({
+    adminEmail: 'test@example.com',
+    adminPassword: 'TestPassword123!',
+    dashboardPort: 4001,
+  });
+
+  app.use('/api/test', ghosttrace.secure());
+
+  app.get('/api/test', (req, res) => {
+    res.json({ message: 'Hello World' });
+  });
+
+  app.listen(4000, () => {
+    console.log('Test app running on 4000');
+  });
+})();
+```
+
+Verify:
+□ App starts without errors
+□ Dashboard URL displayed in console
+□ GET http://localhost:4000/api/test returns 200
+□ Dashboard accessible at http://localhost:4001
+□ Can login with test credentials
+□ X-Client-DNA header present in responses
+
+**Phase 4: Functionality Testing**
+Test middleware protection:
+□ Normal requests work (200 OK)
+□ SQL injection detected (403 if blockOnThreat=true)
+□ Rate limiting works (429 after limit)
+□ Per-route configuration overrides work
+
+**Phase 5: Database Validation**
+□ Database auto-created if doesn't exist
+□ Falls back to SQLite if no config
+□ Tables created automatically
+□ Admin user persists
+□ Data saved to database
+
+**Phase 6: Configuration Validation**
+□ All GHOST_* env variables work
+□ Programmatic config overrides env vars
+□ Validation catches missing admin credentials
+□ Default values are sensible
+
+**Phase 7: Error Handling Validation**
+□ Missing admin credentials: clear error
+□ Port conflicts: handled gracefully
+□ Database connection failure: fallback to SQLite
+□ Invalid config: helpful error messages
+
+**Phase 8: Documentation Validation**
+□ README has working quick start example
+□ All env variables documented
+□ Configuration options explained
+□ Examples run without modifications
+
+**Phase 9: Backward Compatibility**
+□ Existing server.js still works
+□ All API endpoints unchanged
+□ No breaking changes
+
+**Phase 10: Security Validation**
+□ Password hashed with bcrypt
+□ No sensitive data in logs
+□ Middleware security features working
+□ Dashboard requires authentication
+
+**Phase 11: Performance Validation**
+□ Init completes quickly (< 5 seconds)
+□ Middleware adds minimal latency (< 10ms)
+□ No memory leaks
+□ Resource usage reasonable
+
+**Phase 12: Package Validation**
+□ package.json configured correctly
+□ npm link test works
+□ All exports accessible
+□ Files array includes necessary files
+
+**Generate Report:**
+After validation, create a report with:
+
+1. **Summary**:
+   - Total checks performed
+   - Passed / Failed / Warnings
+   
+2. **Critical Issues** (MUST FIX):
+   - Issue description
+   - Location (file:line)
+   - Expected vs Actual behavior
+   - Suggested fix
+
+3. **Non-Critical Issues** (SHOULD FIX):
+   - Issue description
+   - Impact
+   - Suggestion
+
+4. **Warnings** (NICE TO HAVE):
+   - Improvements
+   - Optimizations
+
+5. **Conclusion**:
+   - Is implementation complete?
+   - Ready for release?
+   - What needs to be fixed?
+
+**Important:** Be thorough. Test everything. If something doesn't work, document exactly what's wrong and how to fix it.
+
+Use the detailed validation checklist in VALIDATING_AGENT_PROMPT.md for complete testing procedures.
+
+═══════════════════════════════════════════════════════════════════════════════
+WORKFLOW SUMMARY
+═══════════════════════════════════════════════════════════════════════════════
+
+Step 1: Copy "PROMPT FOR CODING AGENT" above
+Step 2: Paste into coding agent chat
+Step 3: Wait for implementation to complete
+Step 4: Copy "PROMPT FOR VALIDATING AGENT" above
+Step 5: Paste into validating agent chat
+Step 6: Review validation report
+Step 7: If issues found, fix and re-validate
+Step 8: When all checks pass, you're done!
+
+═══════════════════════════════════════════════════════════════════════════════
+QUICK REFERENCE
+═══════════════════════════════════════════════════════════════════════════════
+
+**Target Usage (What developers will do):**
+
+```javascript
+// Install
+npm install ghosttrace
+
+// Integrate (in their server.js)
+const ghosttrace = require('ghosttrace');
+
+await ghosttrace.init({
+  adminEmail: process.env.GHOST_ADMIN_EMAIL,
+  adminPassword: process.env.GHOST_ADMIN_PASS,
+});
+
+app.use('/api/auth', ghosttrace.secure({ riskThreshold: 60 }));
+app.use('/api/posts', ghosttrace.secure());
+
+// Dashboard auto-starts at http://localhost:3001
+```
+
+**Environment Variables:**
+```env
+# Required
+GHOST_ADMIN_EMAIL=admin@company.com
+GHOST_ADMIN_PASS=SecurePassword123!
+
+# Optional
+GHOST_PORT=3001
+GHOST_BLOCK_THRESHOLD=70
+GHOST_RATE_LIMIT=120
+```
+
+**Success = Developer integrates in < 5 minutes with < 10 lines of code**
+
+═══════════════════════════════════════════════════════════════════════════════
