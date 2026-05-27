@@ -1,4 +1,4 @@
-![GhostTrace Logo](/home/wal8y/Pictures/Screenshots/Screenshot From 2026-05-27 16-58-19.png)
+![GhostTrace Logo](docs/images/logo.png)
 
 # GhostTrace
 
@@ -45,9 +45,9 @@ http://localhost:3001
 
 ## Screenshots
 
-![Data Sources](/home/wal8y/Pictures/Screenshots/Screenshot From 2026-05-27 16-14-35.png)
-![AI Settings](/home/wal8y/Pictures/Screenshots/Screenshot From 2026-05-27 16-58-19.png)
-![Global Traffic](/home/wal8y/Pictures/Screenshots/Screenshot From 2026-05-27 16-56-56.png)
+![Data Sources](docs/images/data-sources.png)
+![AI Settings](docs/images/logo.png)
+![Global Traffic](docs/images/global-traffic.png)
 
 ## Core Features
 
